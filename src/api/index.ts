@@ -55,9 +55,19 @@ export class APIServer {
     const frontendPath = path.join(__dirname, '../../frontend/dist');
     this.app.use(express.static(frontendPath));
 
+    // Health check
+    this.app.get('/health', (req, res) => {
+        res.json({ status: 'ok', timestamp: Date.now() });
+    });
+
     // Anything that doesn't match the above, send back index.html
     this.app.get(/(.*)/, (req, res) => {
-      res.sendFile(path.join(frontendPath, 'index.html'));
+      const indexPath = path.join(frontendPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+          res.sendFile(indexPath);
+      } else {
+          res.send('Bery Chain API is running. Frontend not found (run npm run build-frontend).');
+      }
     });
   }
 

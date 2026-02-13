@@ -5,10 +5,10 @@ dotenv.config();
 
 const envSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
-  P2P_PORT: Joi.number().default(3000),
+  P2P_PORT: Joi.number().default(6001),
   API_PORT: Joi.number().default(8080),
   DATA_DIR: Joi.string().default('./data'),
-  PRIVATE_KEY: Joi.string().hex().length(64).required(),
+  PRIVATE_KEY: Joi.string().hex().length(64).optional(),
   BOOTSTRAP_PEERS: Joi.string().allow('').default(''),
   VALIDATORS: Joi.string().allow('').default(''),
   BLOCK_TIME: Joi.number().default(5000), // ms
