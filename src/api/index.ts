@@ -56,7 +56,7 @@ export class APIServer {
     this.app.use(express.static(frontendPath));
 
     // Anything that doesn't match the above, send back index.html
-    this.app.get('*', (req, res) => {
+    this.app.get(/(.*)/, (req, res) => {
       res.sendFile(path.join(frontendPath, 'index.html'));
     });
   }

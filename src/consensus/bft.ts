@@ -61,7 +61,8 @@ export class BFTConsensus extends EventEmitter {
         stateManager: StateManager,
         mempool: Mempool,
         network: P2PNetwork,
-        vmExecutor: VMExecutor
+        vmExecutor: VMExecutor,
+        initialValidators: Validator[] = []
     ) {
         super();
         this.keyPair = keyPair;
@@ -72,11 +73,16 @@ export class BFTConsensus extends EventEmitter {
         this.timeoutMs = (config.consensus.blockTime || 5000);
         this.blockStore = new BlockStore(path.join(config.storage.dataDir, 'blocks'));
         
-        // Initial Validators (Static Config)
-        this.validators = config.consensus.validators.map((v: string) => ({
-            publicKey: v,
-            power: 10
-        }));
+        // Initial Validators
+        if (initialValidators.length > 0) {
+            this.validators = initialValidators;
+        } else {
+            // Fallback to Config
+            this.validators = config.consensus.validators.map((v: string) => ({
+                publicKey: v,
+                power: 10
+            }));
+        }
 
         this.network.on('block', this.handleBlock.bind(this));
         this.network.on('vote', this.handleVote.bind(this));

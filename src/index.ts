@@ -99,7 +99,7 @@ async function main() {
     }
 
     // Consensus
-    const consensus = new BFTConsensus(keyPair, stateManager, mempool, network, vmExecutor);
+    const consensus = new BFTConsensus(keyPair, stateManager, mempool, network, vmExecutor, validators);
 
 
     // API
