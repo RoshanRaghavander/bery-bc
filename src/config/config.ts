@@ -40,7 +40,7 @@ export const config = {
     networkId: envVars.NETWORK_ID,
   },
   api: {
-    port: envVars.API_PORT,
+    port: process.env.PORT ? parseInt(process.env.PORT) : envVars.API_PORT,
   },
   storage: {
     dataDir: envVars.DATA_DIR,

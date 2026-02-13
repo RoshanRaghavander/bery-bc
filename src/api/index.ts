@@ -15,6 +15,11 @@ import { KeyPair } from '../crypto/keypair.js';
 import BN from 'bn.js';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export class APIServer {
   private app: express.Application;
@@ -41,7 +46,19 @@ export class APIServer {
     this.setupMiddleware();
     this.setupRoutes();
     this.setupV1Routes();
+    this.setupFrontendServing();
     this.setupWebSockets();
+  }
+
+  private setupFrontendServing() {
+    // Serve static files from the React frontend app
+    const frontendPath = path.join(__dirname, '../../frontend/dist');
+    this.app.use(express.static(frontendPath));
+
+    // Anything that doesn't match the above, send back index.html
+    this.app.get('*', (req, res) => {
+      res.sendFile(path.join(frontendPath, 'index.html'));
+    });
   }
 
   private setupWebSockets() {

@@ -4,8 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run build-frontend",
+    "build-frontend": "cd frontend && npm install && npm run build",
     "start": "node dist/index.js",
+    "postinstall": "npm run build",
     "test": "npm run build && node --test tests/*.spec.js",
     "gen-keys": "ts-node --esm scripts/gen-keys.ts",
     "create-wallet": "ts-node --esm scripts/create-wallet.ts"
