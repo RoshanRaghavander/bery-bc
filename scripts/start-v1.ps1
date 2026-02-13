@@ -1,0 +1,6 @@
+$env:P2P_PORT="3000"
+$env:API_PORT="8080"
+$env:PRIVATE_KEY="c0c237c395fa01d975651c346995e378ab199cc1b40c6dbb353fad9363c2d621"
+$env:VALIDATORS="02cfd6051b83667280446c38510b303f327729f8dbbdfee157595ca1ec51d1e801,02d299e820e2a913feb2c73dce14daf47a6dfe209aea7995f2ca9de4179d116fac"
+$env:DATA_DIR="./data/validator-1"
+node dist/index.js

@@ -1,0 +1,7 @@
+$env:P2P_PORT="3001"
+$env:API_PORT="8081"
+$env:PRIVATE_KEY="46a486305b5e68fca6f4c881fca0b7b35ad9e08a9dbe5109006cb5c29474b23a"
+$env:VALIDATORS="02cfd6051b83667280446c38510b303f327729f8dbbdfee157595ca1ec51d1e801,02d299e820e2a913feb2c73dce14daf47a6dfe209aea7995f2ca9de4179d116fac"
+$env:BOOTSTRAP_PEERS="/ip4/127.0.0.1/tcp/3000/p2p/16Uiu2HAm9QyesXXWQPAfr8hWgBTpMChEy3ig9s6xAvJtjt29LWqv"
+$env:DATA_DIR="./data/validator-2"
+node dist/index.js

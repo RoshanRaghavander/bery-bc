@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blockchain-node
+  labels:
+    app: blockchain-node
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: blockchain-node
+  template:
+    metadata:
+      labels:
+        app: blockchain-node
+    spec:
+      containers:
+      - name: blockchain-node
+        image: blockchain-node:latest
+        ports:
+        - containerPort: 8080
+        - containerPort: 3000
+        env:
+        - name: DATA_DIR
+          value: "/data"
+        volumeMounts:
+        - name: data-volume
+          mountPath: /data
+      volumes:
+      - name: data-volume
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: blockchain-service
+spec:
+  selector:
+    app: blockchain-node
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: LoadBalancer
