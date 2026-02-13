@@ -1,4 +1,5 @@
 import express from 'express';
+import cors = require('cors');
 import bodyParser from 'body-parser';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -79,6 +80,7 @@ export class APIServer {
   }
 
   private setupMiddleware() {
+      this.app.use(cors());
       this.app.use(helmet());
       this.app.use(compression());
       this.app.use(bodyParser.json({ limit: '100kb' })); // Limit body size
