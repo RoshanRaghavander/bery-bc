@@ -4,10 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "tsc && npm run build-frontend",
-    "build-frontend": "cd frontend && npm install && npm run build",
+    "build": "tsc",
     "start": "node dist/index.js",
-    "postinstall": "npm run build",
     "test": "npm run build && node --test tests/*.spec.js",
     "gen-keys": "ts-node --esm scripts/gen-keys.ts",
     "create-wallet": "ts-node --esm scripts/create-wallet.ts"
@@ -60,8 +58,7 @@
     "@ethereumjs/tx": "^5.2.1",
     "@ethereumjs/util": "^9.1.0",
     "@ethereumjs/vm": "^6.0.0",
-    "@ethereumjs/common": "^4.0.0",
-    "@ethereumjs/account": "^4.0.0"
+    "@ethereumjs/common": "^4.0.0"
   },
   "devDependencies": {
     "@types/compression": "^1.8.1",
