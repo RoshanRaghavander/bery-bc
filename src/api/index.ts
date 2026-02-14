@@ -17,6 +17,8 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs-extra';
+import { Hash } from '../crypto/hash.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,24 +79,15 @@ export class APIServer {
           ws.send(JSON.stringify({ type: 'WELCOME', message: 'Connected to Bery Chain API' }));
           
           ws.on('message', (message: string) => {
-              // Handle subscriptions (e.g., { type: 'SUBSCRIBE', topic: 'blocks' })
-              // For now, we broadcast everything to everyone for simplicity
+              // Handle subscriptions if needed
           });
       });
 
-      // Hook into Consensus events if available
       if (this.consensus) {
-          this.network.on('block', (block) => { // Or better, listen to consensus commit event
-              this.broadcast({ type: 'NEW_BLOCK', block: block });
+          this.consensus.on('committed', (blockJson: any) => {
+              this.broadcast({ type: 'COMMITTED_BLOCK', block: blockJson });
           });
       }
-      
-      // We should really listen to 'committedBlock' from BFTConsensus, but 'block' from network is a start
-      // Let's add a proper event listener if BFTConsensus emits it. 
-      // BFTConsensus extends EventEmitter but we didn't add a specific commit event.
-      // We can use network.on('block') but that's PROPOSAL, not COMMIT.
-      // Let's stick to network block for now as "New Block Proposed".
-      // Better: BFTConsensus should emit 'committed'.
   }
 
   private broadcast(data: any) {
@@ -107,7 +100,16 @@ export class APIServer {
   }
 
   private setupMiddleware() {
-      this.app.use(cors());
+      const allowed = config.api.allowedOrigins;
+      const corsOptions = {
+          origin: (origin: any, callback: any) => {
+              if (!origin) return callback(null, true); // Allow non-browser clients
+              if (allowed.length === 0) return callback(null, false);
+              if (allowed.includes(origin)) return callback(null, true);
+              return callback(null, false);
+          }
+      } as any;
+      this.app.use(cors(corsOptions));
       this.app.use(helmet());
       this.app.use(compression());
       this.app.use(bodyParser.json({ limit: '100kb' })); // Limit body size
@@ -124,6 +126,91 @@ export class APIServer {
 
   private setupV1Routes() {
     const router = express.Router();
+
+    // GET /v1/blocks
+    router.get('/blocks', async (req, res) => {
+        try {
+            if (!this.consensus) return res.status(503).json({ error: 'Consensus not ready' });
+            const store = this.consensus.getBlockStore();
+            const head = await store.getHead();
+            if (!head) return res.json({ blocks: [], total: 0 });
+
+            const limit = parseInt(req.query.limit as string) || 10;
+            const offset = parseInt(req.query.offset as string) || 0;
+            // Iterate backwards from head
+            const startHeight = Math.max(0, head.height - offset);
+            const endHeight = Math.max(0, startHeight - limit + 1);
+
+            const blocks = [];
+            for (let h = startHeight; h >= endHeight; h--) {
+                const block = await store.getBlock(h);
+                if (block) blocks.push(block.toJSON());
+            }
+            res.json({ blocks, total: head.height + 1 });
+        } catch (e: any) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // GET /v1/block/:id
+    router.get('/block/:id', async (req, res) => {
+        try {
+            if (!this.consensus) return res.status(503).json({ error: 'Consensus not ready' });
+            const store = this.consensus.getBlockStore();
+            const id = req.params.id;
+            let block;
+            if (id.startsWith('0x') || id.length === 64) {
+                 block = await store.getBlockByHash(id.replace('0x', ''));
+            } else {
+                 block = await store.getBlock(parseInt(id));
+            }
+            if (!block) return res.status(404).json({ error: 'Block not found' });
+            res.json(block.toJSON());
+        } catch (e: any) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // POST /faucet
+    router.post('/faucet', async (req, res) => {
+        try {
+             if (!config.api.faucetEnabled) return res.status(403).json({ error: 'Faucet disabled' });
+             const token = req.header('x-faucet-token');
+             if (!config.api.faucetToken || token !== config.api.faucetToken) return res.status(401).json({ error: 'Unauthorized' });
+             const { address, amount } = req.body;
+             if (!this.consensus) return res.status(503).json({ error: 'Consensus not ready' });
+             
+             // Use Node's Wallet
+             const wallet = this.consensus.getKeyPair();
+             const myAddress = wallet.getAddress();
+             
+             // Get Nonce
+             const account = await this.stateManager.getAccount(myAddress);
+             const nonce = account.nonce.toNumber(); // BN
+             
+             // Create Tx
+             const tx = new Transaction({
+                 from: myAddress,
+                 to: address,
+                 value: new BN(amount || '1000000000000000000'), // Default 1 BRY
+                 nonce: nonce,
+                 gasLimit: 21000,
+                 gasPrice: new BN(1),
+                 data: Buffer.alloc(0)
+             });
+             
+             tx.sign(wallet);
+             
+            if (await this.mempool.add(tx)) {
+                 await this.network.broadcastTx(tx);
+                 res.json({ hash: tx.hash.toString('hex'), message: 'Funds sent!' });
+             } else {
+                 res.status(400).json({ error: 'Failed to add faucet tx to mempool' });
+             }
+        } catch (e: any) {
+             res.status(500).json({ error: e.message });
+        }
+    });
 
     // GET /v1/chain/info
     router.get('/chain/info', async (req, res) => {
@@ -182,7 +269,7 @@ export class APIServer {
                 return res.status(400).json({ error: 'Invalid signature' });
             }
 
-            if (this.mempool.add(tx)) {
+            if (await this.mempool.add(tx)) {
                 await this.network.broadcastTx(tx);
                 logger.info(`API: Tx accepted ${tx.hash.toString('hex')}`);
                 res.json({ hash: tx.hash.toString('hex') });
@@ -333,6 +420,227 @@ export class APIServer {
       }
     });
 
+    this.app.post('/rpc', async (req, res) => {
+        try {
+            const { id, method, params } = req.body || {};
+            const rpc = async () => {
+                switch (method) {
+                    case 'eth_chainId':
+                        return '0x' + config.chain.chainId.toString(16);
+                    case 'net_version':
+                        return config.chain.chainId.toString(10);
+                    case 'eth_blockNumber':
+                        return '0x' + (this.consensus ? this.consensus.getHeight() : 0).toString(16);
+                    case 'eth_getBalance': {
+                        const address = params?.[0]?.replace('0x', '') || '';
+                        const acc = await this.stateManager.getAccount(address);
+                        return '0x' + acc.balance.toString(16);
+                    }
+                    case 'eth_getTransactionByHash': {
+                        const hash = (params?.[0] || '').replace('0x', '');
+                        if (!this.consensus) return null;
+                        const bs = this.consensus.getBlockStore();
+                        const txData = await bs.getTransaction(hash);
+                        if (!txData) return null;
+                        const t = txData.tx;
+                        return {
+                            hash: '0x' + t.hash.toString('hex'),
+                            from: '0x' + t.from,
+                            to: t.to ? '0x' + t.to : null,
+                            nonce: '0x' + t.nonce.toString(16),
+                            value: '0x' + t.value.toString(16),
+                            gas: '0x' + t.gasLimit.toString(16),
+                            gasPrice: '0x' + t.gasPrice.toString(16),
+                            input: '0x' + t.data.toString('hex'),
+                            blockHash: '0x' + txData.blockHash,
+                            blockNumber: '0x' + txData.blockHeight.toString(16),
+                        };
+                    }
+                    case 'eth_getBlockByNumber': {
+                        const tag = params?.[0] || 'latest';
+                        const full = !!params?.[1];
+                        if (!this.consensus) return null;
+                        const bs = this.consensus.getBlockStore();
+                        let height = this.consensus.getHeight();
+                        if (typeof tag === 'string' && tag.startsWith('0x')) height = parseInt(tag, 16);
+                        const block = await bs.getBlock(height);
+                        if (!block) return null;
+                        const json = block.toJSON();
+                        const meta = await bs.getBlockMeta(json.header.height);
+                        return {
+                            number: '0x' + json.header.height.toString(16),
+                            hash: '0x' + json.header.hash,
+                            parentHash: '0x' + json.header.parentHash,
+                            timestamp: '0x' + json.header.timestamp.toString(16),
+                            miner: '0x' + json.header.validator,
+                            baseFeePerGas: '0x' + new BN(config.fees.baseFee).toString(16),
+                            difficulty: '0x0',
+                            totalDifficulty: '0x0',
+                            size: '0x0',
+                            gasLimit: '0x' + (10000000).toString(16),
+                            gasUsed: '0x' + ((meta ? meta.gasUsed : 0).toString(16)),
+                            mixHash: '0x' + '0'.repeat(64),
+                            receiptsRoot: '0x' + json.header.transactionsRoot,
+                            logsBloom: '0x' + (meta ? meta.logsBloom : '0'.repeat(512)),
+                            transactions: full ? json.transactions.map((tx: any) => '0x' + tx.hash) : json.transactions.map((tx: any) => '0x' + tx.hash)
+                        };
+                    }
+                    case 'eth_getBlockByHash': {
+                        const hash = (params?.[0] || '').replace('0x', '');
+                        const full = !!params?.[1];
+                        if (!this.consensus) return null;
+                        const bs = this.consensus.getBlockStore();
+                        const block = await bs.getBlockByHash(hash);
+                        if (!block) return null;
+                        const json = block.toJSON();
+                        return {
+                            number: '0x' + json.header.height.toString(16),
+                            hash: '0x' + json.header.hash,
+                            parentHash: '0x' + json.header.parentHash,
+                            timestamp: '0x' + json.header.timestamp.toString(16),
+                            miner: '0x' + json.header.validator,
+                            baseFeePerGas: '0x' + new BN(config.fees.baseFee).toString(16),
+                            difficulty: '0x0',
+                            totalDifficulty: '0x0',
+                            size: '0x0',
+                            gasLimit: '0x' + (10000000).toString(16),
+                            gasUsed: '0x' + (0).toString(16),
+                            mixHash: '0x' + '0'.repeat(64),
+                            receiptsRoot: '0x' + json.header.transactionsRoot,
+                            logsBloom: '0x' + '0'.repeat(512),
+                            transactions: full ? json.transactions.map((tx: any) => '0x' + tx.hash) : json.transactions.map((tx: any) => '0x' + tx.hash)
+                        };
+                    }
+                    case 'eth_getTransactionCount': {
+                        const address = (params?.[0] || '').replace('0x', '');
+                        const acc = await this.stateManager.getAccount(address);
+                        return '0x' + acc.nonce.toString(16);
+                    }
+                    case 'eth_getCode': {
+                        const address = (params?.[0] || '').replace('0x', '');
+                        const acc = await this.stateManager.getAccount(address);
+                        if (!acc.codeHash || acc.codeHash.equals(Buffer.alloc(32))) return '0x';
+                        const code = await this.stateManager.getCode(acc.codeHash);
+                        return code ? '0x' + code.toString('hex') : '0x';
+                    }
+                    case 'eth_getStorageAt': {
+                        const address = (params?.[0] || '').replace('0x', '');
+                        const keyHex = (params?.[1] || '').replace('0x', '');
+                        const val = await this.stateManager.getContractStorage(address, Buffer.from(keyHex, 'hex'));
+                        return val ? '0x' + val.toString('hex') : '0x';
+                    }
+                    case 'eth_getTransactionReceipt': {
+                        const hash = (params?.[0] || '').replace('0x', '');
+                        if (!this.consensus) return null;
+                        const bs = this.consensus.getBlockStore();
+                        const receipt = await bs.getReceipt(hash);
+                        return receipt;
+                    }
+                    case 'eth_gasPrice': {
+                        return '0x' + new BN(config.fees.baseFee).toString(16);
+                    }
+                    case 'eth_maxPriorityFeePerGas': {
+                        return '0x' + new BN(config.fees.priorityFee).toString(16);
+                    }
+                    case 'eth_feeHistory': {
+                        const blocks = Number(params?.[0] || 1);
+                        const newest = params?.[1] || 'latest';
+                        const oldest = newest === 'latest' ? '0x' + (this.consensus ? this.consensus.getHeight() : 0).toString(16) : newest;
+                        const baseFees = Array(blocks).fill('0x' + new BN(config.fees.baseFee).toString(16));
+                        const gasRatios = Array(blocks).fill(0);
+                        return { oldestBlock: oldest, baseFeePerGas: baseFees, gasUsedRatio: gasRatios };
+                    }
+                    case 'eth_getLogs': {
+                        const filter = params?.[0] || {};
+                        if (!this.consensus) return [];
+                        const bs = this.consensus.getBlockStore();
+                        const fromTag = filter.fromBlock;
+                        const toTag = filter.toBlock;
+                        const from = typeof fromTag === 'string' && fromTag.startsWith('0x') ? parseInt(fromTag, 16) : (fromTag === 'earliest' ? 0 : this.consensus.getHeight());
+                        const to = typeof toTag === 'string' && toTag.startsWith('0x') ? parseInt(toTag, 16) : (toTag === 'latest' || !toTag ? this.consensus.getHeight() : this.consensus.getHeight());
+                        const address = filter.address;
+                        const topics = filter.topics;
+                        const logs = await bs.getLogs({ fromBlock: from, toBlock: to, address, topics });
+                        return logs;
+                    }
+                    case 'eth_call': {
+                        const callObj = params?.[0] || {};
+                        const result = await (await import('../evm/index.js')).evmCall(this.stateManager, config.chain.chainId, {
+                            from: callObj.from,
+                            to: (callObj.to || '').replace('0x', ''),
+                            data: callObj.data,
+                            value: callObj.value,
+                            gas: callObj.gas
+                        });
+                        return result.returnData;
+                    }
+                    case 'eth_estimateGas': {
+                        const callObj = params?.[0] || {};
+                        const result = await (await import('../evm/index.js')).evmEstimateGas(this.stateManager, config.chain.chainId, {
+                            from: callObj.from,
+                            to: (callObj.to || '').replace('0x', ''),
+                            data: callObj.data,
+                            value: callObj.value,
+                            gas: callObj.gas
+                        });
+                        return result;
+                    }
+                    case 'eth_sendRawTransaction': {
+                        const raw = (params?.[0] || '').replace('0x', '');
+                        const txMod: any = await import('@ethereumjs/tx');
+                        const utilMod: any = await import('@ethereumjs/util');
+                        const EthTx = txMod.Transaction;
+                        const Address = utilMod.Address;
+                        const tx = EthTx.fromSerializedTx(Buffer.from(raw, 'hex'));
+                        const sender = tx.getSenderAddress();
+                        const to = tx.to ? tx.to.toString() : '';
+                        const value = tx.value;
+                        const nonce = Number(tx.nonce);
+                        const gasLimit = Number(tx.gasLimit);
+                        const gasPrice = tx.gasPrice || tx.maxFeePerGas || tx.maxPriorityFeePerGas || new BN(config.fees.baseFee + config.fees.priorityFee);
+                        const data = tx.data;
+                        let vNum = Number(tx.v);
+                        let recid = 0;
+                        const chainId = tx.common.customChain?.chainId || tx.common.chainIdBN()?.toNumber() || config.chain.chainId;
+                        if (vNum === 27 || vNum === 28) {
+                            recid = vNum - 27;
+                        } else {
+                            const base = 35 + chainId * 2;
+                            recid = vNum - base;
+                            if (recid !== 0 && recid !== 1) recid = (vNum - (36 + chainId * 2));
+                            if (recid !== 0 && recid !== 1) recid = 0;
+                        }
+                        const r = tx.r;
+                        const s = tx.s;
+                        const sig = Buffer.concat([r.toArrayLike(Buffer, 'be', 32), s.toArrayLike(Buffer, 'be', 32), Buffer.from([recid])]);
+                        const ourTx = new Transaction({
+                            from: sender.toString().replace('0x', ''),
+                            to: to ? to.replace('0x', '') : '',
+                            value: new BN(value.toString()),
+                            nonce,
+                            gasLimit,
+                            gasPrice: new BN(gasPrice.toString()),
+                            data: Buffer.from(data),
+                            signature: sig
+                        });
+                        if (!ourTx.verify()) return { error: 'Invalid signature' };
+                        if (await this.mempool.add(ourTx)) {
+                            await this.network.broadcastTx(ourTx);
+                            return '0x' + ourTx.hash.toString('hex');
+                        }
+                        return { error: 'Rejected' };
+                    }
+                    default:
+                        return { error: 'Method not supported' };
+                }
+            };
+            const result = await rpc();
+            res.json({ jsonrpc: '2.0', id, result });
+        } catch (e: any) {
+            res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: e.message } });
+        }
+    });
+
     this.app.post('/wallet/create', (req, res) => {
         try {
             const kp = new KeyPair();
@@ -349,20 +657,48 @@ export class APIServer {
 
     this.app.post('/faucet', async (req, res) => {
         try {
-            const { address } = req.body;
+            if (!config.api.faucetEnabled) return res.status(403).json({ error: 'Faucet disabled' });
+            const token = req.header('x-faucet-token');
+            if (!config.api.faucetToken || token !== config.api.faucetToken) return res.status(401).json({ error: 'Unauthorized' });
+            const { address, amount } = req.body;
             if (!address) return res.status(400).json({ error: 'Address required' });
 
-            const account = await this.stateManager.getAccount(address);
-            // Grant 1000 Tokens
-            account.balance = account.balance.add(new BN(1000));
-            await this.stateManager.putAccount(address, account);
-            
-            logger.info(`Faucet: Funded ${address} with 1000 BRY`);
-            res.json({ 
-                success: true, 
-                message: 'Faucet funded 1000 Bery', 
-                newBalance: account.balance.toString(10) 
+            if (!this.consensus) return res.status(503).json({ error: 'Consensus not ready' });
+
+            // Use Node's Wallet
+            const wallet = this.consensus.getKeyPair();
+            const myAddress = wallet.getAddress();
+
+            // Get Nonce
+            const account = await this.stateManager.getAccount(myAddress);
+            // Ideally we should track pending nonce in mempool, but for now using state nonce
+            // If high concurrency, this might fail with "Nonce too low" in mempool
+            const nonce = account.nonce.toNumber(); 
+
+            // Create Tx
+            const tx = new Transaction({
+                from: myAddress,
+                to: address,
+                value: new BN(amount || '1000000000000000000'), // Default 1 BRY
+                nonce: nonce,
+                gasLimit: 21000,
+                gasPrice: new BN(1),
+                data: Buffer.alloc(0)
             });
+
+            tx.sign(wallet);
+
+            if (await this.mempool.add(tx)) {
+                await this.network.broadcastTx(tx);
+                logger.info(`Faucet: Sent 1 BRY to ${address} (Tx: ${tx.hash.toString('hex')})`);
+                res.json({ 
+                    success: true, 
+                    message: 'Funds sent! (Tx broadcasted)', 
+                    hash: tx.hash.toString('hex')
+                });
+            } else {
+                res.status(400).json({ error: 'Failed to add faucet tx to mempool (likely nonce conflict, try again)' });
+            }
         } catch (e: any) {
             logger.error(`API Error /faucet: ${e.message}`);
             res.status(500).json({ error: e.message });
@@ -393,7 +729,7 @@ export class APIServer {
             return res.status(400).json({ error: 'Invalid signature' });
         }
 
-        if (this.mempool.add(tx)) {
+        if (await this.mempool.add(tx)) {
             await this.network.broadcastTx(tx);
             logger.info(`API: Tx accepted ${tx.hash.toString('hex')}`);
             res.json({ hash: tx.hash.toString('hex') });
@@ -424,7 +760,7 @@ export class APIServer {
     });
   }
 
-  public async start() {
+  public listen() {
     this.server.listen(this.port, () => {
       logger.info(`API Server running on port ${this.port}`);
       logger.info(`WebSocket Server ready on ws://localhost:${this.port}`);

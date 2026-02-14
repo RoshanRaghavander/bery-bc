@@ -18,6 +18,11 @@ const envSchema = Joi.object({
   NETWORK_ID: Joi.string().default('my-chain-1'),
   CHAIN_ID: Joi.number().default(8379), // BERY in phone keypad-ish
   DECIMALS: Joi.number().default(18),
+  ALLOWED_ORIGINS: Joi.string().allow('').default(''),
+  FAUCET_ENABLED: Joi.boolean().default(false),
+  FAUCET_TOKEN: Joi.string().allow('').default(''),
+  BASE_FEE: Joi.number().default(1),
+  PRIORITY_FEE: Joi.number().default(1)
 }).unknown().required();
 
 const { error, value: envVars } = envSchema.validate(process.env);
@@ -41,6 +46,9 @@ export const config = {
   },
   api: {
     port: process.env.PORT ? parseInt(process.env.PORT) : envVars.API_PORT,
+    allowedOrigins: envVars.ALLOWED_ORIGINS ? envVars.ALLOWED_ORIGINS.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0) : [],
+    faucetEnabled: !!envVars.FAUCET_ENABLED,
+    faucetToken: envVars.FAUCET_TOKEN
   },
   storage: {
     dataDir: envVars.DATA_DIR,
@@ -51,4 +59,8 @@ export const config = {
     blockTime: envVars.BLOCK_TIME,
     blockReward: envVars.BLOCK_REWARD,
   },
+  fees: {
+    baseFee: envVars.BASE_FEE,
+    priorityFee: envVars.PRIORITY_FEE
+  }
 };

@@ -42,6 +42,7 @@ export class BFTConsensus extends EventEmitter {
     private round: number = 0;
     private step: 'PROPOSE' | 'PREVOTE' | 'PRECOMMIT' | 'COMMIT' = 'PROPOSE';
     private lockedBlock?: Block;
+    private processing = false; // Mutex for state access
     private lastCommitHash: Buffer = Buffer.alloc(32);
     private intervalId?: NodeJS.Timeout;
     private stopped: boolean = false;
@@ -93,13 +94,31 @@ export class BFTConsensus extends EventEmitter {
         return this.height;
     }
 
+    public getKeyPair(): KeyPair {
+        return this.keyPair;
+    }
+
     public getBlockStore(): BlockStore {
         return this.blockStore;
     }
 
+    private async withLock<T>(fn: () => Promise<T>): Promise<T> {
+        while (this.processing) {
+            await new Promise(r => setTimeout(r, 10));
+        }
+        this.processing = true;
+        try {
+            return await fn();
+        } finally {
+            this.processing = false;
+        }
+    }
+
     public async start() {
+        logger.info('Consensus: Starting...');
         // Load head from storage
         const head = await this.blockStore.getHead();
+        logger.info('Consensus: Head loaded');
         if (head) {
             this.height = head.height;
             this.lastCommitHash = Buffer.from(head.hash, 'hex');
@@ -108,6 +127,7 @@ export class BFTConsensus extends EventEmitter {
 
         // Load Slashed Validators
         const slashed = await this.blockStore.getSlashedValidators();
+        logger.info('Consensus: Slashed loaded');
         this.slashedValidators = new Set(slashed);
         if (this.slashedValidators.size > 0) {
             logger.info(`Loaded ${this.slashedValidators.size} slashed validators.`);
@@ -119,6 +139,7 @@ export class BFTConsensus extends EventEmitter {
         // We delay slightly to allow peer connections
         setTimeout(() => this.syncBlockchain(), 2000);
         this.startRound(this.height + 1, 0);
+        logger.info('Consensus: Started');
     }
 
 
@@ -227,8 +248,10 @@ export class BFTConsensus extends EventEmitter {
                          
                          // Execute
                          await this.stateManager.checkpoint();
+                         let syncReceipts: any[] = [];
                          try {
-                             await this.vmExecutor.executeBlock(block.transactions);
+                             const execRes = await this.vmExecutor.executeBlock(block.transactions);
+                             syncReceipts = execRes.receipts;
                          } catch (e) {
                              await this.stateManager.revert();
                              throw e;
@@ -244,6 +267,7 @@ export class BFTConsensus extends EventEmitter {
                          // Commit
                          await this.stateManager.commit();
                          await this.blockStore.saveBlock(block);
+                         await this.blockStore.saveReceipts(block.header.height, block.hash.toString('hex'), syncReceipts);
                          
                          this.height = block.header.height;
                          this.lastCommitHash = block.hash;
@@ -457,7 +481,8 @@ export class BFTConsensus extends EventEmitter {
         let block: Block | undefined;
 
         try {
-            const validTxs = await this.vmExecutor.executeBlock(txs);
+            const execRes = await this.vmExecutor.executeBlock(txs);
+            const validTxs = execRes.validTxs;
             const stateRoot = await this.stateManager.getRoot();
             
             block = Block.create(
@@ -498,76 +523,97 @@ export class BFTConsensus extends EventEmitter {
     private async handleBlock(blockData: any) {
         if (!this.stateManager || this.stopped) return; 
         
-        try {
-            const headerData = blockData.header;
-            
-            // Basic Checks
-            if (headerData.height <= this.height) return; // Old block
-            
-            // Check Lock
-            if (this.lockedBlock) {
-                 const lockedRoot = this.lockedBlock.header.transactionsRoot.toString('hex');
-                 if (headerData.transactionsRoot !== lockedRoot) {
-                      logger.warn(`Ignoring block proposal ${headerData.height}:${headerData.round} - Locked on different payload`);
-                      return;
-                 }
-            }
+        let shouldVote = false;
+        let blockHash = '';
+        let height = 0;
+        let round = 0;
+        let shouldCheckQuorum = false;
 
-            const blockHash = BlockHeader.fromJSON(headerData).hash.toString('hex');
-            
-            // Store block for later commit
-            // We need to reconstruct full Block object to verify execution
-            const txsData = blockData.transactions;
-            const transactions = txsData.map((t: any) => Transaction.fromJSON(t));
-            
-            // Verify Proposer
-            const proposer = this.getProposer(headerData.height, this.round);
-            const blockProposer = headerData.validator || headerData.proposer;
-            if (proposer.publicKey !== blockProposer) {
-                 logger.warn(`Invalid proposer. Expected ${proposer.publicKey}, got ${blockProposer}`);
-                 return;
-            }
-
-            // Execute & Verify
-            await this.stateManager.checkpoint();
+        // Wrap in mutex to prevent race condition with commitBlock or proposeBlock
+        await this.withLock(async () => {
             try {
-                await this.vmExecutor.executeBlock(transactions);
-                const stateRoot = await this.stateManager.getRoot();
-                const headerRoot = Buffer.from(headerData.stateRoot, 'hex');
+                const headerData = blockData.header;
                 
-                if (!stateRoot.equals(headerRoot)) {
-                     logger.error('State root mismatch');
-                     await this.stateManager.revert();
+                // Basic Checks
+                if (headerData.height <= this.height) return; // Old block
+                
+                // Check Lock
+                if (this.lockedBlock) {
+                     const lockedRoot = this.lockedBlock.header.transactionsRoot.toString('hex');
+                     if (headerData.transactionsRoot !== lockedRoot) {
+                          logger.warn(`Ignoring block proposal ${headerData.height}:${headerData.round} - Locked on different payload`);
+                          return;
+                     }
+                }
+
+                blockHash = BlockHeader.fromJSON(headerData).hash.toString('hex');
+                height = headerData.height;
+                round = headerData.round;
+                
+                // Store block for later commit
+                // We need to reconstruct full Block object to verify execution
+                const txsData = blockData.transactions;
+                const transactions = txsData.map((t: any) => Transaction.fromJSON(t));
+                
+                // Verify Proposer
+                const proposer = this.getProposer(height, this.round);
+                const blockProposer = headerData.validator || headerData.proposer;
+                if (proposer.publicKey !== blockProposer) {
+                     logger.warn(`Invalid proposer. Expected ${proposer.publicKey}, got ${blockProposer}`);
                      return;
                 }
-                
-                // Block is valid. Store it.
-                // We need to re-create the Block object
-                const header = BlockHeader.fromJSON(headerData);
-                const block = new Block(header, transactions);
-                this.pendingBlocks.set(blockHash, block);
 
-                // Broadcast PREVOTE if we are in the correct round and haven't voted yet
-                if (headerData.height === this.height + 1 && headerData.round === this.round) {
-                    if (!this.hasVoted(headerData.height, this.round, 'PREVOTE')) {
-                        this.step = 'PREVOTE';
-                        // Reset timer for PREVOTE phase (waiting for Quorum)
-                        const currentTimeout = this.timeoutMs * Math.pow(1.2, this.round);
-                        this.setTimer(currentTimeout);
-
-                        await this.broadcastVote('PREVOTE', blockHash, headerData.height, this.round);
+                // Execute & Verify
+                await this.stateManager.checkpoint();
+                try {
+                    const execRes2 = await this.vmExecutor.executeBlock(transactions);
+                    const receipts2 = execRes2.receipts;
+                    const stateRoot = await this.stateManager.getRoot();
+                    const headerRoot = Buffer.from(headerData.stateRoot, 'hex');
+                    
+                    if (!stateRoot.equals(headerRoot)) {
+                         logger.error(`State root mismatch: Expected ${headerData.stateRoot}, Got ${stateRoot.toString('hex')}`);
+                         await this.stateManager.revert();
+                         return;
                     }
+                    
+                    // Block is valid. Store it.
+                    // We need to re-create the Block object
+                    const header = BlockHeader.fromJSON(headerData);
+                    const block = new Block(header, transactions);
+                    this.pendingBlocks.set(blockHash, block);
+
+                    // Determine if we should vote
+                    if (height === this.height + 1 && round === this.round) {
+                        if (!this.hasVoted(height, this.round, 'PREVOTE')) {
+                            shouldVote = true;
+                        }
+                    }
+
+                    // Check if we can proceed (in case we received votes before block)
+                    shouldCheckQuorum = true;
+
+                } finally {
+                    await this.stateManager.revert();
                 }
 
-                // Check if we can proceed (in case we received votes before block)
-                await this.checkQuorum(headerData.height, this.round, 'PREVOTE');
-
-            } finally {
-                await this.stateManager.revert();
+            } catch (e) {
+                logger.error('Failed to handle block', e);
             }
+        });
 
-        } catch (e) {
-            logger.error('Failed to handle block', e);
+        // Outside Lock - Avoid Deadlock
+        if (shouldVote) {
+            this.step = 'PREVOTE';
+            // Reset timer for PREVOTE phase (waiting for Quorum)
+            const currentTimeout = this.timeoutMs * Math.pow(1.2, this.round);
+            this.setTimer(currentTimeout);
+
+            await this.broadcastVote('PREVOTE', blockHash, height, round);
+        }
+
+        if (shouldCheckQuorum) {
+             await this.checkQuorum(height, round, 'PREVOTE');
         }
     }
 
@@ -708,8 +754,14 @@ export class BFTConsensus extends EventEmitter {
         try {
             const msg = this.getVoteBytes(vote);
             const signature = Buffer.from(vote.signature, 'hex');
-            const publicKey = Buffer.from(vote.validator, 'hex');
-            return KeyPair.verify(signature, msg, publicKey);
+            
+            // Recover Public Key from signature
+            // We use recover instead of verify because we only have the address (hash of pubkey)
+            // stored in the vote.validator field, not the full public key.
+            const publicKey = KeyPair.recover(signature, msg);
+            const address = KeyPair.addressFromPublicKey(publicKey);
+            
+            return address === vote.validator;
         } catch (e) {
             return false;
         }
@@ -735,67 +787,88 @@ export class BFTConsensus extends EventEmitter {
     }
 
     private async commitBlock(block: Block) {
-        if (this.height >= block.header.height) return;
+        // Wrap in mutex to prevent conflict with handleBlock
+        await this.withLock(async () => {
+            if (this.height >= block.header.height) return;
 
-        try {
-            logger.info(`COMMITTING Block ${block.header.height} (${block.hash.toString('hex').slice(0,8)})`);
-            
-            // Execute for real
-            // Note: we need to handle the fact that we might have already executed in 'propose' or 'verify'
-            // but we reverted state. So we execute again and commit.
-            
-            const txs = block.transactions;
-            
-            // Verify Coinbase
-            if (!txs[0] || txs[0].from !== SYSTEM_SENDER) {
-                 logger.error('Block rejected: First transaction must be coinbase from SYSTEM_SENDER');
-                 return; // Do not commit invalid block
-            }
-
-            logger.debug(`Checkpointing state for block ${block.header.height}`);
-            await this.stateManager.checkpoint();
-            
             try {
-                await this.vmExecutor.executeBlock(txs);
-            } catch (execError) {
-                logger.error(`VM Execution Error: ${execError}`);
-                // If VM fails, we MUST revert state changes from this block
-                // But wait, executeBlock catches its own errors per tx?
-                // If executeBlock throws, it's a system error (worker crash).
-                // We should revert checkpoint?
-                // Actually, if we commit() after error, we might commit partial state?
-                // Safe thing: Revert if system error.
-                // But for now, let's just proceed to commit (assuming executeBlock handled tx errors).
+                logger.info(`COMMITTING Block ${block.header.height} (${block.hash.toString('hex').slice(0,8)})`);
+                
+                // Execute for real
+                // Note: we need to handle the fact that we might have already executed in 'propose' or 'verify'
+                // but we reverted state. So we execute again and commit.
+                
+                const txs = block.transactions;
+                
+                // Verify Coinbase
+                if (!txs[0] || txs[0].from !== SYSTEM_SENDER) {
+                     logger.error('Block rejected: First transaction must be coinbase from SYSTEM_SENDER');
+                     return; // Do not commit invalid block
+                }
+
+                logger.debug(`Checkpointing state for block ${block.header.height}`);
+                await this.stateManager.checkpoint();
+                
+                let commitReceipts: any[] = [];
+                try {
+                    const execRes3 = await this.vmExecutor.executeBlock(txs);
+                    commitReceipts = execRes3.receipts;
+                } catch (execError) {
+                    logger.error(`VM Execution Error: ${execError}`);
+                    // If VM fails, we MUST revert state changes from this block
+                    // But wait, executeBlock catches its own errors per tx?
+                    // If executeBlock throws, it's a system error (worker crash).
+                    // We should revert checkpoint?
+                    // Actually, if we commit() after error, we might commit partial state?
+                    // Safe thing: Revert if system error.
+                    // But for now, let's just proceed to commit (assuming executeBlock handled tx errors).
+                }
+
+                logger.debug(`Committing state for block ${block.header.height}`);
+                await this.stateManager.commit();
+                await this.blockStore.saveBlock(block);
+                await this.blockStore.saveReceipts(block.header.height, block.hash.toString('hex'), commitReceipts);
+                
+                // Update Validator Set based on new state
+                await this.updateValidators();
+
+                this.height = block.header.height;
+                this.lastCommitHash = block.hash;
+                this.step = 'COMMIT';
+                
+                // Cleanup Mempool
+                for (const tx of txs) {
+                    this.mempool.remove(tx.hash);
+                }
+                
+                // Cleanup old votes/blocks
+                this.pendingBlocks.clear(); 
+                this.lockedBlock = undefined;
+                // In real app, keep recent history, delete very old
+                
+                // Notify subscribers
+                this.emitCommitted(block);
+
+                // Start next round
+                this.startRound(this.height + 1, 0);
+
+            } catch (e) {
+                logger.error('FATAL: Failed to commit block', e);
+                try {
+                    await this.stateManager.revert();
+                } catch {}
+                this.step = 'PROPOSE';
+                this.round++;
+                this.startRound(this.height + 1, this.round);
             }
+        });
+    }
 
-            logger.debug(`Committing state for block ${block.header.height}`);
-            await this.stateManager.commit(); // Persist to disk
-            await this.blockStore.saveBlock(block); // Persist block
-            
-            // Update Validator Set based on new state
-            await this.updateValidators();
-
-            this.height = block.header.height;
-            this.lastCommitHash = block.hash;
-            this.step = 'COMMIT';
-            
-            // Cleanup Mempool
-            for (const tx of txs) {
-                this.mempool.remove(tx.hash);
-            }
-            
-            // Cleanup old votes/blocks
-            this.pendingBlocks.clear(); 
-            this.lockedBlock = undefined;
-            // In real app, keep recent history, delete very old
-            
-            // Start next round
-            this.startRound(this.height + 1, 0);
-
-        } catch (e) {
-            logger.error('FATAL: Failed to commit block', e);
-            process.exit(1); // Panic on commit failure
-        }
+    // Emit committed block event externally for subscribers (API/WebSocket)
+    private emitCommitted(block: Block) {
+        try {
+            this.emit('committed', block.toJSON());
+        } catch {}
     }
 
     private async slashValidator(validator: string) {

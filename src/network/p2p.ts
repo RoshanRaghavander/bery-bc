@@ -5,7 +5,7 @@ import { yamux } from '@libp2p/yamux';
 import { bootstrap } from '@libp2p/bootstrap';
 import { kadDHT } from '@libp2p/kad-dht';
 import { pubsubPeerDiscovery } from '@libp2p/pubsub-peer-discovery';
-import { floodsub, FloodSub } from '@libp2p/floodsub'; // Changed to floodsub
+import { gossipsub, GossipSub } from '@chainsafe/libp2p-gossipsub';
 import { ping } from '@libp2p/ping';
 
 import { identify } from '@libp2p/identify';
@@ -38,7 +38,11 @@ export class P2PNetwork extends EventEmitter {
 
   getTopicPeers(topic: string): number {
       if (!this.node) return 0;
-      return (this.node.services.pubsub as FloodSub).getSubscribers(topic).length;
+      const pubsub: any = this.node.services.pubsub as any;
+      if (pubsub && typeof pubsub.getSubscribers === 'function') {
+          return pubsub.getSubscribers(topic).length;
+      }
+      return 0;
   }
 
   // Handle incoming sync requests
@@ -142,7 +146,7 @@ export class P2PNetwork extends EventEmitter {
             peerDiscovery,
             services: {
                 // dht: kadDHT(),
-                pubsub: floodsub() as any, // Simple floodsub for small network
+                pubsub: gossipsub() as any,
                 identify: identify(),
                 ping: ping()
             }
@@ -176,7 +180,7 @@ export class P2PNetwork extends EventEmitter {
     });
     
     // Listen for pubsub messages
-    (this.node.services.pubsub as FloodSub).addEventListener('message', (evt) => {
+    (this.node.services.pubsub as any).addEventListener('message', (evt: any) => {
         const { topic, data } = evt.detail;
         if (topic === this.TOPIC_BLOCK) {
             this.handleBlockMessage(data);
@@ -192,17 +196,19 @@ export class P2PNetwork extends EventEmitter {
         }
     });
 
-    (this.node.services.pubsub as FloodSub).addEventListener('subscription-change', (evt) => {
-        console.log(`[P2P] Subscription change: Peer ${evt.detail.peerId.toString()} subscribed to ${evt.detail.subscriptions.map(s => s.topic).join(', ')}`);
-    });
+    try {
+        (this.node.services.pubsub as any).addEventListener('subscription-change', (evt: any) => {
+            console.log(`[P2P] Subscription change: Peer ${evt.detail.peerId.toString()} subscribed to ${(evt.detail.subscriptions || []).map((s: any) => s.topic).join(', ')}`);
+        });
+    } catch {}
 
     // Subscribe to topics
-    (this.node.services.pubsub as FloodSub).subscribe(this.TOPIC_BLOCK);
-    (this.node.services.pubsub as FloodSub).subscribe(this.TOPIC_TX);
-    (this.node.services.pubsub as FloodSub).subscribe(this.TOPIC_CONSENSUS);
+    (this.node.services.pubsub as any).subscribe(this.TOPIC_BLOCK);
+    (this.node.services.pubsub as any).subscribe(this.TOPIC_TX);
+    (this.node.services.pubsub as any).subscribe(this.TOPIC_CONSENSUS);
 
     // Log subscriptions
-    const pubsub = this.node.services.pubsub as FloodSub;
+    const pubsub = this.node.services.pubsub as any;
     setInterval(() => {
         const blockPeers = pubsub.getSubscribers(this.TOPIC_BLOCK);
         const txPeers = pubsub.getSubscribers(this.TOPIC_TX);
@@ -228,24 +234,24 @@ export class P2PNetwork extends EventEmitter {
     if (!this.node) return;
     const data = block.toJSON();
     const buffer = Buffer.from(JSON.stringify(data));
-    const peers = (this.node.services.pubsub as FloodSub).getSubscribers(this.TOPIC_BLOCK);
+    const peers = (this.node.services.pubsub as any).getSubscribers(this.TOPIC_BLOCK);
     console.log(`Broadcasting block ${block.header.height} to ${peers.length} peers`);
-    await (this.node.services.pubsub as FloodSub).publish(this.TOPIC_BLOCK, buffer);
+    await (this.node.services.pubsub as any).publish(this.TOPIC_BLOCK, buffer);
   }
 
   async broadcastTx(tx: Transaction) {
     if (!this.node) return;
     const data = tx.toJSON();
     const buffer = Buffer.from(JSON.stringify(data));
-    const peers = (this.node.services.pubsub as FloodSub).getSubscribers(this.TOPIC_TX);
+    const peers = (this.node.services.pubsub as any).getSubscribers(this.TOPIC_TX);
     console.log(`Broadcasting tx ${tx.hash.toString('hex')} to topic ${this.TOPIC_TX} (${peers.length} peers)`);
-    await (this.node.services.pubsub as FloodSub).publish(this.TOPIC_TX, buffer);
+    await (this.node.services.pubsub as any).publish(this.TOPIC_TX, buffer);
   }
 
   async broadcastVote(vote: any) {
     if (!this.node) return;
     const buffer = Buffer.from(JSON.stringify(vote));
-    await (this.node.services.pubsub as FloodSub).publish(this.TOPIC_CONSENSUS, buffer);
+    await (this.node.services.pubsub as any).publish(this.TOPIC_CONSENSUS, buffer);
   }
 
   private handleBlockMessage(data: Uint8Array) {

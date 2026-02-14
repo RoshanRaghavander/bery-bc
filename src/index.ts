@@ -30,7 +30,7 @@ async function main() {
     // Initialize Components
     const db = new LevelDB(path.join(dataDir, 'db'));
     const stateManager = new StateManager(db);
-    const mempool = new Mempool();
+    const mempool = new Mempool(stateManager);
     const vmExecutor = new VMExecutor(stateManager);
     
     // Keys
@@ -40,7 +40,6 @@ async function main() {
     } else {
         keyPair = new KeyPair();
         logger.info(`Generated new KeyPair. Address: ${keyPair.getAddress()}`);
-        logger.info(`Private Key: ${keyPair.privateKey.toString('hex')}`);
     }
 
     // Convert to Libp2p Key
@@ -107,7 +106,7 @@ async function main() {
 
     // Start Everything
     await network.start();
-    api.start();
+    api.listen();
 
     // Manual dial bootstrap peers
     if (bootstrapPeers.length > 0) {
@@ -177,10 +176,10 @@ async function main() {
         network.broadcastTx(tx);
     });
 
-    network.on('tx', (txData) => {
+    network.on('tx', async (txData) => {
         try {
             const tx = Transaction.fromJSON(txData);
-            mempool.add(tx);
+            await mempool.add(tx);
         } catch (e) {
             logger.error('Failed to add network tx to mempool', e);
         }

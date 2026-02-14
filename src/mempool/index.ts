@@ -1,21 +1,39 @@
 import { Transaction, SYSTEM_SENDER } from '../core/transaction.js';
 import { EventEmitter } from 'events';
 import BN from 'bn.js';
+import { StateManager } from '../state/state_manager.js';
 
 export class Mempool extends EventEmitter {
   private txs: Map<string, Transaction> = new Map();
   private readonly MAX_SIZE = 5000;
+  private stateManager?: StateManager;
 
-  constructor() {
+  constructor(stateManager?: StateManager) {
     super();
+    this.stateManager = stateManager;
   }
 
-  public add(tx: Transaction): boolean {
+  public async add(tx: Transaction): Promise<boolean> {
     // Basic verification
     if (!tx.verify()) return false;
 
     // Reject System Transactions (they are only for Block Rewards)
     if (tx.from === SYSTEM_SENDER) return false;
+    // Enforce nonce policy if state available
+    if (this.stateManager) {
+        // Simple rule: require next nonce
+        // More advanced: allow queuing per sender; omitted for now
+        try {
+            const senderAcc = await this.stateManager.getAccount(tx.from);
+            const expected = senderAcc.nonce.toNumber() + 1;
+            if (tx.nonce !== expected) {
+                return false;
+            }
+        } catch {
+            // If state read fails, reject conservatively
+            return false;
+        }
+    }
     
     const hash = tx.hash.toString('hex');
     if (this.txs.has(hash)) return false;

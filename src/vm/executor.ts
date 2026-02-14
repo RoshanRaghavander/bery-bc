@@ -1,8 +1,11 @@
 import { Worker } from 'worker_threads';
-import { Transaction, STAKING_ADDRESS } from '../core/transaction.js';
+import { Transaction, STAKING_ADDRESS, SYSTEM_SENDER } from '../core/transaction.js';
 import { StateManager } from '../state/state_manager.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { config } from '../config/config.js';
+import { Hash } from '../crypto/hash.js';
+import BN from 'bn.js';
 
 // ESM dirname workaround
 const __filename = fileURLToPath(import.meta.url);
@@ -18,7 +21,7 @@ export class VMExecutor {
     this.workerPath = workerPath || path.resolve(__dirname, 'worker.js');
   }
 
-  public async executeBlock(transactions: Transaction[]): Promise<Transaction[]> {
+  public async executeBlock(transactions: Transaction[]): Promise<{ validTxs: Transaction[]; receipts: any[] }> {
     // Naive parallel execution:
     // 1. We could spin up N workers.
     // 2. Or just one worker for now to prove concept.
@@ -33,13 +36,20 @@ export class VMExecutor {
 
     let worker = new Worker(this.workerPath);
     const validTxs: Transaction[] = [];
+    const receipts: any[] = [];
+    let cumulativeGasUsed = 0;
 
     try {
-      for (const tx of transactions) {
+      for (let i = 0; i < transactions.length; i++) {
+        const tx = transactions[i];
         try {
-            const success = await this.processTx(worker, tx);
-            if (success) {
+            const result = await this.processTx(worker, tx);
+            if (result.applied) {
                 validTxs.push(tx);
+                cumulativeGasUsed += result.receipt.gasUsed;
+                result.receipt.cumulativeGasUsed = cumulativeGasUsed;
+                result.receipt.transactionIndex = i;
+                receipts.push(result.receipt);
             }
         } catch (e: any) {
             if (e.message === 'Transaction execution timed out') {
@@ -57,10 +67,10 @@ export class VMExecutor {
     } finally {
       await worker.terminate();
     }
-    return validTxs;
+    return { validTxs, receipts };
   }
 
-  private async processTx(worker: Worker, tx: Transaction): Promise<boolean> {
+  private async processTx(worker: Worker, tx: Transaction): Promise<{ applied: boolean; receipt: any }> {
     // 1. Fetch State
     const sender = await this.stateManager.getAccount(tx.from);
     
@@ -76,16 +86,23 @@ export class VMExecutor {
         code = tx.data;
     } else {
         receiver = await this.stateManager.getAccount(tx.to);
-        // Check if receiver has code (Contract Call) or is Staking Address
-        if ((receiver.codeHash && !receiver.codeHash.equals(Buffer.alloc(32))) || tx.to === STAKING_ADDRESS) {
-            if (receiver.codeHash && !receiver.codeHash.equals(Buffer.alloc(32))) {
-                code = await this.stateManager.getCode(receiver.codeHash);
-            }
+        if (receiver.codeHash && !receiver.codeHash.equals(Buffer.alloc(32))) {
+            code = await this.stateManager.getCode(receiver.codeHash);
+            storage = await this.stateManager.dumpContractStorage(tx.to);
+        } else if (tx.to === STAKING_ADDRESS) {
             storage = await this.stateManager.dumpContractStorage(tx.to);
         }
     }
 
-    // 2. Send to Worker
+    const isContractCall = !!code && !isCreate && tx.to !== STAKING_ADDRESS;
+    if (isContractCall) {
+      return this.executeEvmCall(tx, sender, receiver);
+    }
+
+    if (isCreate && code) {
+      return this.executeEvmCreate(tx, sender);
+    }
+
     return new Promise((resolve, reject) => {
       let timeout: NodeJS.Timeout;
 
@@ -118,11 +135,28 @@ export class VMExecutor {
                   );
               }
           }
-
-          resolve(true);
+          resolve({ applied: true, receipt: {
+            transactionHash: tx.hash.toString('hex'),
+            from: tx.from,
+            to: tx.to || '',
+            contractAddress: result.contractAddress || null,
+            gasUsed: result.gasUsed || 0,
+            effectiveGasPrice: tx.gasPrice.toString(10),
+            status: '0x1',
+            logs: []
+          } });
         } else {
           console.warn(`Tx failed: ${result.error}`);
-          resolve(false); // We resolve even on failure, just don't apply state
+          resolve({ applied: false, receipt: {
+            transactionHash: tx.hash.toString('hex'),
+            from: tx.from,
+            to: tx.to || '',
+            contractAddress: null,
+            gasUsed: 0,
+            effectiveGasPrice: tx.gasPrice.toString(10),
+            status: '0x0',
+            logs: []
+          } });
         }
         
         worker.off('message', messageHandler);
@@ -153,7 +187,124 @@ export class VMExecutor {
         worker.off('message', messageHandler);
         worker.off('error', errorHandler);
         reject(new Error('Transaction execution timed out'));
-      }, 5000); // 5s timeout per tx
+      }, 5000);
     });
+  }
+
+  private async executeEvmCall(tx: Transaction, senderAcc: any, receiverAcc: any): Promise<{ applied: boolean; receipt: any }> {
+    const evmMod: any = await import('../evm/index.js');
+    const from = '0x' + tx.from;
+    const to = (tx.to ? '0x' + tx.to : '0x').replace('0x0', '0x');
+    const res = await evmMod.evmCall(this.stateManager, config.chain.chainId, {
+      from,
+      to: to.replace('0x', ''),
+      data: '0x' + tx.data.toString('hex'),
+      value: '0x' + tx.value.toString(16),
+      gas: tx.gasLimit
+    });
+
+    const utilMod: any = await import('@ethereumjs/util');
+    const { Address, Account } = utilMod;
+    const fromAddr = Address.fromString('0x' + tx.from);
+    const toAddr = Address.fromString('0x' + (tx.to || ''));
+    const vm = await evmMod.createVM(config.chain.chainId);
+    await vm.stateManager.putAccount(fromAddr, new Account());
+    await vm.stateManager.putAccount(toAddr, new Account());
+
+    const senderUpdated = await this.stateManager.getAccount(tx.from);
+    const receiverUpdated = await this.stateManager.getAccount(tx.to || '');
+    await this.stateManager.putAccount(tx.from, senderUpdated);
+    if (tx.to) await this.stateManager.putAccount(tx.to, receiverUpdated);
+
+    const receipt = {
+      transactionHash: tx.hash.toString('hex'),
+      from: tx.from,
+      to: tx.to || '',
+      contractAddress: null,
+      gasUsed: res.gasUsed || 0,
+      effectiveGasPrice: tx.gasPrice.toString(10),
+      status: '0x1',
+      logs: res.logs.map((l: any) => ({
+        address: l.address,
+        topics: l.topics,
+        data: l.data,
+        transactionHash: tx.hash.toString('hex')
+      }))
+    };
+
+    return { applied: true, receipt };
+  }
+
+  private async executeEvmCreate(tx: Transaction, senderAcc: any): Promise<{ applied: boolean; receipt: any }> {
+    const isSystemTx = tx.from === SYSTEM_SENDER;
+    if (!tx.verify()) {
+      return { applied: false, receipt: { transactionHash: tx.hash.toString('hex'), status: '0x0', logs: [], gasUsed: 0 } };
+    }
+
+    const sender = await this.stateManager.getAccount(tx.from);
+    const gasLimit = tx.gasLimit;
+    const gasPrice = tx.gasPrice;
+    const upfrontGasCost = new BN(gasLimit).mul(gasPrice);
+
+    if (!isSystemTx) {
+      const expected = sender.nonce.toNumber() + 1;
+      if (tx.nonce !== expected) {
+        return { applied: false, receipt: { transactionHash: tx.hash.toString('hex'), status: '0x0', logs: [], gasUsed: 0 } };
+      }
+      const totalCost = tx.value.add(upfrontGasCost);
+      if (sender.balance.lt(totalCost)) {
+        return { applied: false, receipt: { transactionHash: tx.hash.toString('hex'), status: '0x0', logs: [], gasUsed: 0 } };
+      }
+      sender.balance = sender.balance.sub(upfrontGasCost);
+      sender.balance = sender.balance.sub(tx.value);
+      sender.nonce = sender.nonce.add(new BN(1));
+    }
+
+    const nonceBuf = Buffer.alloc(8);
+    nonceBuf.writeBigUInt64BE(BigInt(sender.nonce.toNumber() - 1));
+    const addrBuf = Hash.keccak256(Buffer.concat([Buffer.from(tx.from, 'hex'), nonceBuf]));
+    const contractAddress = addrBuf.subarray(addrBuf.length - 20).toString('hex');
+    const receiver = await this.stateManager.getAccount(contractAddress);
+    receiver.balance = receiver.balance.add(tx.value);
+
+    const evmMod: any = await import('../evm/index.js');
+    const res = await evmMod.evmCreate(this.stateManager, config.chain.chainId, {
+      from: '0x' + tx.from,
+      initCode: '0x' + tx.data.toString('hex'),
+      value: '0x' + tx.value.toString(16),
+      gas: gasLimit
+    });
+
+    const unusedGas = Math.max(gasLimit - (res.gasUsed || 0), 0);
+    if (!isSystemTx && unusedGas > 0) {
+      const refund = new BN(unusedGas).mul(gasPrice);
+      sender.balance = sender.balance.add(refund);
+    }
+
+    const runtimeCode = Buffer.from(res.runtimeCode);
+    const codeHash = Hash.hash(runtimeCode);
+    receiver.codeHash = codeHash;
+
+    await this.stateManager.putAccount(tx.from, sender);
+    await this.stateManager.putAccount(contractAddress, receiver);
+    await this.stateManager.putCode(codeHash, runtimeCode);
+
+    const receipt = {
+      transactionHash: tx.hash.toString('hex'),
+      from: tx.from,
+      to: '',
+      contractAddress,
+      gasUsed: res.gasUsed || gasLimit,
+      effectiveGasPrice: tx.gasPrice.toString(10),
+      status: '0x1',
+      logs: (res.logs || []).map((l: any) => ({
+        address: l.address,
+        topics: l.topics,
+        data: l.data,
+        transactionHash: tx.hash.toString('hex')
+      }))
+    };
+
+    return { applied: true, receipt };
   }
 }
