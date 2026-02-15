@@ -7,3 +7,5 @@ data/
 test-db-*/
 .DS_Store
 coverage/
+!frontend/dist/
+!frontend/dist/**

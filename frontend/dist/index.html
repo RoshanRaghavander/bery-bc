@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Bery Wallet</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #050816;
+      color: #e5e7eb;
+    }
+    .app {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    .header {
+      margin-bottom: 24px;
+    }
+    .title {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: #9ca3af;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: #020617;
+      border-radius: 12px;
+      padding: 16px 16px 18px;
+      border: 1px solid #111827;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    }
+    .card h2 {
+      font-size: 18px;
+      margin: 0 0 8px;
+    }
+    .card p {
+      font-size: 13px;
+      color: #9ca3af;
+      margin: 0 0 12px;
+    }
+    .field {
+      margin-bottom: 10px;
+    }
+    .label {
+      font-size: 12px;
+      margin-bottom: 4px;
+      color: #9ca3af;
+      display: block;
+    }
+    .input, .textarea, .select {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #1f2933;
+      background: #020617;
+      color: #e5e7eb;
+      font-size: 13px;
+    }
+    .textarea {
+      min-height: 72px;
+      resize: vertical;
+    }
+    .input:focus, .textarea:focus {
+      outline: none;
+      border-color: #22c55e;
+      box-shadow: 0 0 0 1px rgba(34,197,94,0.35);
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: #020617;
+      transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.1s ease;
+      box-shadow: 0 8px 24px rgba(16,185,129,0.35);
+    }
+    .button.secondary {
+      background: #111827;
+      color: #e5e7eb;
+      box-shadow: none;
+      border: 1px solid #1f2937;
+    }
+    .button:disabled {
+      cursor: default;
+      opacity: 0.6;
+      box-shadow: none;
+    }
+    .button:not(:disabled):hover {
+      filter: brightness(1.03);
+      transform: translateY(-1px);
+      box-shadow: 0 12px 32px rgba(16,185,129,0.4);
+    }
+    .button.secondary:not(:disabled):hover {
+      box-shadow: 0 8px 20px rgba(15,23,42,0.6);
+    }
+    .button + .button {
+      margin-left: 8px;
+    }
+    .muted {
+      font-size: 11px;
+      color: #6b7280;
+    }
+    .value-box {
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #020617;
+      border: 1px solid #1f2937;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 11px;
+      word-break: break-all;
+      margin-bottom: 6px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(55,65,81,0.7);
+      font-size: 11px;
+      color: #d1d5db;
+      margin-right: 6px;
+      margin-bottom: 4px;
+    }
+    .pill span {
+      color: #9ca3af;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    .row .input {
+      flex: 1;
+      min-width: 120px;
+    }
+    .status {
+      margin-top: 4px;
+      font-size: 11px;
+      min-height: 14px;
+    }
+    .status.success {
+      color: #4ade80;
+    }
+    .status.error {
+      color: #f97373;
+    }
+    .status.neutral {
+      color: #9ca3af;
+    }
+    .divider {
+      height: 1px;
+      background: radial-gradient(circle, rgba(55,65,81,1), rgba(15,23,42,0));
+      margin: 6px 0 10px;
+    }
+    .footer {
+      margin-top: 12px;
+      font-size: 11px;
+      color: #4b5563;
+      text-align: center;
+    }
+    @media (max-width: 640px) {
+      .title {
+        font-size: 22px;
+      }
+      .app {
+        padding: 18px 12px 32px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="title">Bery Wallet</div>
+      <div class="subtitle" id="network-info">Connecting to node...</div>
+    </header>
+
+    <div class="grid">
+      <section class="card">
+        <h2>1. Create Wallet</h2>
+        <p>Generate a new Bery address. Save the private key somewhere safe.</p>
+        <button id="btn-create-wallet" class="button">Create Wallet</button>
+        <div class="divider"></div>
+        <div class="field">
+          <span class="label">Address</span>
+          <div id="wallet-address" class="value-box">No wallet yet</div>
+        </div>
+        <div class="field">
+          <span class="label">Private Key</span>
+          <div id="wallet-private" class="value-box">Hidden</div>
+          <div class="row">
+            <button id="btn-toggle-priv" class="button secondary" disabled>Show</button>
+            <button id="btn-copy-addr" class="button secondary" disabled>Copy Address</button>
+          </div>
+          <div class="muted">Anyone with this private key can control your funds.</div>
+        </div>
+        <div id="wallet-status" class="status neutral"></div>
+      </section>
+
+      <section class="card">
+        <h2>2. Get BRY (Faucet)</h2>
+        <p>Request BRY from the validator faucet to your wallet address.</p>
+        <div class="field">
+          <label class="label" for="faucet-address">Your Address</label>
+          <input id="faucet-address" class="input" placeholder="Paste address or use created wallet">
+        </div>
+        <div class="field">
+          <label class="label" for="faucet-amount">Amount (wei, optional)</label>
+          <input id="faucet-amount" class="input" placeholder="Default: 1000000000000000000 (1 BRY)">
+        </div>
+        <div class="field">
+          <label class="label" for="faucet-token">Faucet Token (x-faucet-token)</label>
+          <input id="faucet-token" class="input" placeholder="Enter faucet token if configured">
+        </div>
+        <button id="btn-faucet" class="button">Request Funds</button>
+        <div class="divider"></div>
+        <div class="field">
+          <label class="label" for="balance-address">Check Balance</label>
+          <div class="row">
+            <input id="balance-address" class="input" placeholder="Address to check">
+            <button id="btn-check-balance" class="button secondary">Refresh</button>
+          </div>
+        </div>
+        <div class="pill"><span>Balance:</span>&nbsp;<span id="balance-value">-</span></div>
+        <div class="pill"><span>Nonce:</span>&nbsp;<span id="balance-nonce">-</span></div>
+        <div id="faucet-status" class="status neutral"></div>
+      </section>
+
+      <section class="card">
+        <h2>3. Send BRY (Validator)</h2>
+        <p>Send BRY from the validator faucet address to any recipient.</p>
+        <div class="field">
+          <label class="label" for="send-recipient">Recipient Address</label>
+          <input id="send-recipient" class="input" placeholder="Address to receive BRY">
+        </div>
+        <div class="field">
+          <label class="label" for="send-amount">Amount (wei)</label>
+          <input id="send-amount" class="input" placeholder="1000000000000000000">
+        </div>
+        <div class="field">
+          <label class="label" for="send-token">Faucet Token (x-faucet-token)</label>
+          <input id="send-token" class="input" placeholder="Same token as above">
+        </div>
+        <button id="btn-send" class="button">Send From Validator</button>
+        <div class="divider"></div>
+        <div class="field">
+          <span class="label">Last Transaction Hash</span>
+          <div id="send-hash" class="value-box">No transaction yet</div>
+        </div>
+        <div id="send-status" class="status neutral"></div>
+      </section>
+
+      <section class="card">
+        <h2>4. Stake BRY</h2>
+        <p>Connect a browser wallet (MetaMask or similar) and stake BRY into the network.</p>
+        <div class="field">
+          <button id="btn-connect-wallet" class="button secondary">Connect Wallet</button>
+        </div>
+        <div class="field">
+          <span class="label">Connected Address</span>
+          <div id="stake-wallet-address" class="value-box">No wallet connected</div>
+        </div>
+        <div class="divider"></div>
+        <div class="field">
+          <label class="label" for="stake-amount">Stake Amount (wei)</label>
+          <input id="stake-amount" class="input" placeholder="Amount of BRY to stake (in wei)">
+        </div>
+        <button id="btn-stake" class="button">Stake via Wallet</button>
+        <div class="divider"></div>
+        <div class="field">
+          <label class="label" for="unstake-amount">Unstake Amount (wei)</label>
+          <input id="unstake-amount" class="input" placeholder="Amount of BRY to unstake (in wei)">
+        </div>
+        <button id="btn-unstake" class="button secondary">Unstake via Wallet</button>
+        <div class="divider"></div>
+        <div class="field">
+          <span class="label">Last Staking Tx Hash</span>
+          <div id="stake-hash" class="value-box">No staking transaction yet</div>
+        </div>
+        <div id="stake-status" class="status neutral"></div>
+        <div class="muted">Configure your wallet RPC URL to point to this node (e.g. http://localhost:8080/rpc).</div>
+      </section>
+    </div>
+
+    <div class="footer">
+      Served by the Bery Chain node at the same origin.
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
