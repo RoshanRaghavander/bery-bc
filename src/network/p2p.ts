@@ -236,7 +236,13 @@ export class P2PNetwork extends EventEmitter {
     const buffer = Buffer.from(JSON.stringify(data));
     const peers = (this.node.services.pubsub as any).getSubscribers(this.TOPIC_BLOCK);
     console.log(`Broadcasting block ${block.header.height} to ${peers.length} peers`);
-    await (this.node.services.pubsub as any).publish(this.TOPIC_BLOCK, buffer);
+    if (peers.length === 0) return;
+    try {
+      await (this.node.services.pubsub as any).publish(this.TOPIC_BLOCK, buffer);
+    } catch (e: any) {
+      if (e && typeof e.message === 'string' && e.message.includes('NoPeersSubscribedToTopic')) return;
+      throw e;
+    }
   }
 
   async broadcastTx(tx: Transaction) {
@@ -245,13 +251,26 @@ export class P2PNetwork extends EventEmitter {
     const buffer = Buffer.from(JSON.stringify(data));
     const peers = (this.node.services.pubsub as any).getSubscribers(this.TOPIC_TX);
     console.log(`Broadcasting tx ${tx.hash.toString('hex')} to topic ${this.TOPIC_TX} (${peers.length} peers)`);
-    await (this.node.services.pubsub as any).publish(this.TOPIC_TX, buffer);
+    if (peers.length === 0) return;
+    try {
+      await (this.node.services.pubsub as any).publish(this.TOPIC_TX, buffer);
+    } catch (e: any) {
+      if (e && typeof e.message === 'string' && e.message.includes('NoPeersSubscribedToTopic')) return;
+      throw e;
+    }
   }
 
   async broadcastVote(vote: any) {
     if (!this.node) return;
     const buffer = Buffer.from(JSON.stringify(vote));
-    await (this.node.services.pubsub as any).publish(this.TOPIC_CONSENSUS, buffer);
+    const peers = (this.node.services.pubsub as any).getSubscribers(this.TOPIC_CONSENSUS);
+    if (peers.length === 0) return;
+    try {
+      await (this.node.services.pubsub as any).publish(this.TOPIC_CONSENSUS, buffer);
+    } catch (e: any) {
+      if (e && typeof e.message === 'string' && e.message.includes('NoPeersSubscribedToTopic')) return;
+      throw e;
+    }
   }
 
   private handleBlockMessage(data: Uint8Array) {
