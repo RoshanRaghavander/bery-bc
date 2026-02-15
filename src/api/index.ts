@@ -57,6 +57,10 @@ export class APIServer {
     const frontendPath = path.join(__dirname, '../../frontend/dist');
     this.app.use(express.static(frontendPath));
 
+    this.app.get('/favicon.ico', (req, res) => {
+        res.status(204).end();
+    });
+
     // Health check
     this.app.get('/health', (req, res) => {
         res.json({ status: 'ok', timestamp: Date.now() });
