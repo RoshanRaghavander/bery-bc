@@ -104,7 +104,8 @@ export class APIServer {
       const corsOptions = {
           origin: (origin: any, callback: any) => {
               if (!origin) return callback(null, true); // Allow non-browser clients
-              if (allowed.length === 0) return callback(null, false);
+              // If no explicit allowed origins are configured, allow all origins.
+              if (allowed.length === 0) return callback(null, true);
               if (allowed.includes(origin)) return callback(null, true);
               return callback(null, false);
           }
@@ -763,7 +764,7 @@ export class APIServer {
   public listen() {
     this.server.listen(this.port, () => {
       logger.info(`API Server running on port ${this.port}`);
-      logger.info(`WebSocket Server ready on ws://localhost:${this.port}`);
+      logger.info(`WebSocket Server ready on port ${this.port}`);
     });
   }
 }

@@ -2,10 +2,12 @@
   "name": "blockchain-final",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
+    "prestart": "npm run build",
     "start": "node dist/index.js",
+    "start:dev": "ts-node --esm src/index.ts",
     "test": "npm run build && node --test tests/*.spec.js",
     "gen-keys": "ts-node --esm scripts/gen-keys.ts",
     "create-wallet": "ts-node --esm scripts/create-wallet.ts"
@@ -14,6 +16,9 @@
   "author": "",
   "license": "ISC",
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@chainsafe/libp2p-gossipsub": "^14.1.2",
     "@chainsafe/libp2p-noise": "^17.0.0",
