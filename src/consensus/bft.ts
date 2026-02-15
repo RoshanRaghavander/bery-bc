@@ -800,10 +800,11 @@ export class BFTConsensus extends EventEmitter {
                 
                 const txs = block.transactions;
                 
-                // Verify Coinbase
-                if (!txs[0] || txs[0].from !== SYSTEM_SENDER) {
-                     logger.error('Block rejected: First transaction must be coinbase from SYSTEM_SENDER');
-                     return; // Do not commit invalid block
+                for (let i = 0; i < txs.length; i++) {
+                    if (txs[i].from === SYSTEM_SENDER && i !== 0) {
+                        logger.error('Block rejected: SYSTEM_SENDER transaction must be first in block');
+                        return;
+                    }
                 }
 
                 logger.debug(`Checkpointing state for block ${block.header.height}`);
