@@ -6,10 +6,13 @@ import { SignIn } from './pages/SignIn';
 import { SignUp } from './pages/SignUp';
 import { Dashboard } from './pages/Dashboard';
 import { Wallet } from './pages/Wallet';
+import { Staking } from './pages/Staking';
 import { Blocks } from './pages/Blocks';
 import { Transactions } from './pages/Transactions';
 import { Explorer } from './pages/Explorer';
 import { BlockDetail } from './pages/BlockDetail';
+import { AddressDetail } from './pages/AddressDetail';
+import { TxDetail } from './pages/TxDetail';
 import { Docs } from './pages/Docs';
 import { About } from './pages/About';
 import { NotFound } from './pages/NotFound';
@@ -24,10 +27,13 @@ function App() {
           <Route path="sign-up" element={<SignUp />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="wallet" element={<Wallet />} />
+          <Route path="staking" element={<Staking />} />
           <Route path="blocks" element={<Blocks />} />
           <Route path="transactions" element={<Transactions />} />
-          <Route path="explorer" element={<Explorer />} />
-          <Route path="explorer/block/:height" element={<BlockDetail />} />
+        <Route path="explorer" element={<Explorer />} />
+        <Route path="explorer/block/:height" element={<BlockDetail />} />
+        <Route path="explorer/address/:address" element={<AddressDetail />} />
+        <Route path="explorer/tx/:hash" element={<TxDetail />} />
           <Route path="docs" element={<Docs />} />
           <Route path="about" element={<About />} />
           <Route path="*" element={<NotFound />} />

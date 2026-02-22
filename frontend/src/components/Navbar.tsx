@@ -5,6 +5,7 @@ const navLinks = [
   { to: '/explorer', label: 'Explorer' },
   { to: '/blocks', label: 'Blocks' },
   { to: '/wallet', label: 'Wallet' },
+  { to: '/staking', label: 'Staking' },
   { to: '/docs', label: 'Docs' },
 ];
 

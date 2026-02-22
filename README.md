@@ -75,6 +75,8 @@ cd frontend && npm install && npm run dev
 | `PRIVATE_KEY` | Yes (prod) | 64 hex validator key — `npm run gen-keys` |
 | `JWT_SECRET` | Yes (prod) | 32+ char secret for auth |
 | `DATABASE_URL` | Prod | PostgreSQL for auth (optional: uses JSON file) |
+| `GENESIS_SUPPLY_TOTAL` | No | Total BRY at genesis (1B default, split among validators) |
+| `BLOCK_REWARD` | No | BRY per block (13 default, ~8% inflation on 1B) |
 | `P2P_PORT` | No | Default 3000 |
 | `API_PORT` | No | Default 8080 |
 | `FAUCET_ENABLED` | No | Enable faucet |

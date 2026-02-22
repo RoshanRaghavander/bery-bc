@@ -26,7 +26,13 @@ export function Explorer() {
       } else {
         const res = await fetch(`/v1/account/${q.replace(/^0x/, '')}`);
         const data = await res.json();
-        setResult({ type: 'account', data });
+        if (res.ok) {
+          const txsRes = await fetch(`/v1/address/${q.replace(/^0x/, '')}/transactions?limit=10`);
+          const txsData = await txsRes.json();
+          setResult({ type: 'account', data, transactions: txsData.transactions || [] });
+        } else {
+          setResult({ type: 'account', data });
+        }
       }
     } catch {
       setResult({ type: 'error' });
@@ -102,12 +108,17 @@ export function Explorer() {
 
       {result && result.type === 'account' && (
         <div className="card card-elevated" style={{ padding: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 20 }}>Address</h2>
-          <table style={{ width: '100%', fontSize: 13 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>Address</h2>
+            <Link to={`/explorer/address/${(result.data.address ?? query).replace(/^0x/, '')}`} style={{ fontSize: 13, fontWeight: 500 }}>
+              View full history →
+            </Link>
+          </div>
+          <table style={{ width: '100%', fontSize: 13, marginBottom: result.transactions?.length ? 24 : 0 }}>
             <tbody>
               <tr>
                 <td style={{ padding: '10px 0', color: 'var(--color-text-muted)', width: 140 }}>Address</td>
-                <td style={{ padding: '10px 0' }}>
+                <td style={{ padding: '10px 0', fontFamily: 'var(--font-mono)' }}>
                   <Copyable value={result.data.address ?? query} display={`${String(result.data.address ?? query).slice(0, 10)}...${String(result.data.address ?? query).slice(-8)}`} />
                 </td>
               </tr>
@@ -123,6 +134,28 @@ export function Explorer() {
               </tr>
             </tbody>
           </table>
+          {result.transactions?.length > 0 && (
+            <>
+              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Recent Transactions</h3>
+              {result.transactions.slice(0, 5).map((t: any) => (
+                <Link
+                  key={t.txHash}
+                  to={`/explorer/tx/${t.txHash}`}
+                  style={{
+                    display: 'block',
+                    padding: '10px 0',
+                    borderTop: '1px solid var(--color-border)',
+                    textDecoration: 'none',
+                    color: 'var(--color-accent)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 12,
+                  }}
+                >
+                  {String(t.txHash).slice(0, 18)}... — Block #{t.height}
+                </Link>
+              ))}
+            </>
+          )}
         </div>
       )}
 
@@ -160,22 +193,42 @@ export function Explorer() {
 
       {result && result.type === 'tx' && (
         <div className="card card-elevated" style={{ padding: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 20 }}>Transaction</h2>
-          <pre
-            style={{
-              margin: 0,
-              padding: 16,
-              background: 'var(--color-bg-muted)',
-              borderRadius: 'var(--radius-md)',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 12,
-              overflow: 'auto',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all',
-            }}
-          >
-            {JSON.stringify(result.data, null, 2)}
-          </pre>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>Transaction</h2>
+            <Link to={`/explorer/tx/${result.data.hash || query}`} style={{ fontSize: 13, fontWeight: 500 }}>
+              View details →
+            </Link>
+          </div>
+          {result.data.tx ? (
+            <table style={{ width: '100%', fontSize: 13 }}>
+              <tbody>
+                <tr>
+                  <td style={{ padding: '10px 0', color: 'var(--color-text-muted)', width: 120 }}>Status</td>
+                  <td style={{ padding: '10px 0' }}>{result.data.status || '—'}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '10px 0', color: 'var(--color-text-muted)' }}>From</td>
+                  <td style={{ padding: '10px 0', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                    <Link to={`/explorer/address/${result.data.tx.from}`}>{result.data.tx.from}</Link>
+                  </td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '10px 0', color: 'var(--color-text-muted)' }}>To</td>
+                  <td style={{ padding: '10px 0', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                    {result.data.tx.to ? <Link to={`/explorer/address/${result.data.tx.to}`}>{result.data.tx.to}</Link> : 'Contract Creation'}
+                  </td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '10px 0', color: 'var(--color-text-muted)' }}>Value</td>
+                  <td style={{ padding: '10px 0' }}>{(Number(result.data.tx.value || 0) / 1e18).toFixed(6)} BRY</td>
+                </tr>
+              </tbody>
+            </table>
+          ) : (
+            <pre style={{ margin: 0, padding: 16, background: 'var(--color-bg-muted)', borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-mono)', fontSize: 12, overflow: 'auto' }}>
+              {JSON.stringify(result.data, null, 2)}
+            </pre>
+          )}
         </div>
       )}
     </div>

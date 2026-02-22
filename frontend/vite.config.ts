@@ -23,6 +23,7 @@ export default defineConfig({
       '/mempool': { target: 'http://localhost:8080' },
       '/block': { target: 'http://localhost:8080' },
       '/auth': { target: 'http://localhost:8080' },
+      '/docs': { target: 'http://localhost:8080' },
     },
   },
 });

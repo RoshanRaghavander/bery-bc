@@ -19,8 +19,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs-extra';
 import { Hash } from '../crypto/hash.js';
+import { STAKING_ADDRESS } from '../core/transaction.js';
 import { IUserStore } from '../auth/user_store.js';
 import { signToken, verifyToken } from '../auth/jwt.js';
+import { ContractRegistry } from './contract_registry.js';
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -70,6 +72,7 @@ export class APIServer {
   private consensus?: BFTConsensus;
   private faucetLastByAddress: Map<string, number> = new Map();
   private userStore?: IUserStore;
+  private contractRegistry: ContractRegistry;
 
   constructor(port: number, mempool: Mempool, stateManager: StateManager, network: P2PNetwork, consensus?: BFTConsensus, userStore?: IUserStore) {
     this.app = express();
@@ -79,6 +82,8 @@ export class APIServer {
     this.network = network;
     this.consensus = consensus;
     this.userStore = userStore;
+    this.contractRegistry = new ContractRegistry(config.storage.dataDir);
+    this.contractRegistry.loadSync();
 
     // Create HTTP Server for WS upgrade
     this.server = createServer(this.app);
@@ -108,6 +113,18 @@ export class APIServer {
     // Health check (liveness - process is running)
     this.app.get('/health', (req, res) => {
         res.json({ status: 'ok', timestamp: Date.now() });
+    });
+
+    // OpenAPI spec
+    this.app.get('/docs/openapi.yaml', (req, res) => {
+      const docsPath = path.resolve(process.cwd(), 'docs', 'openapi.yaml');
+      const relPath = path.resolve(__dirname, '../../docs/openapi.yaml');
+      const filePath = fs.existsSync(docsPath) ? docsPath : relPath;
+      if (fs.existsSync(filePath)) {
+        res.type('application/x-yaml').sendFile(filePath);
+      } else {
+        res.status(404).json({ error: 'OpenAPI spec not found' });
+      }
     });
 
     // Readiness (ready to serve - consensus synced)
@@ -361,7 +378,7 @@ export class APIServer {
             peers: this.network.getPeers().length,
             mempoolSize: this.mempool.size(),
             finality: 'Instant (BFT)',
-            version: '1.0.0'
+            version: config.chain.version
         });
     });
 
@@ -546,6 +563,95 @@ export class APIServer {
             } else {
                 res.status(404).json({ error: 'Block not found' });
             }
+        } catch (e: any) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // Staking
+    router.get('/staking/info', async (req, res) => {
+        try {
+            const allStakersKey = 'all_stakers';
+            const listBuf = await this.stateManager.getContractStorage(STAKING_ADDRESS, Buffer.from(allStakersKey));
+            let stakers: string[] = [];
+            if (listBuf && listBuf.length > 0) {
+                try {
+                    stakers = JSON.parse(listBuf.toString('utf8'));
+                } catch {
+                    stakers = [];
+                }
+            }
+            let totalStaked = new BN(0);
+            const items: { address: string; stake: string }[] = [];
+            for (const addr of stakers) {
+                const keyBuf = Buffer.from(addr.replace(/^0x/, ''), 'hex');
+                const stakeBuf = await this.stateManager.getContractStorage(STAKING_ADDRESS, keyBuf);
+                const stake = stakeBuf ? new BN(stakeBuf) : new BN(0);
+                totalStaked = totalStaked.add(stake);
+                items.push({ address: '0x' + addr, stake: stake.toString(10) });
+            }
+            res.json({ totalStaked: totalStaked.toString(10), stakers: items });
+        } catch (e: any) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+    router.get('/staking/:address', async (req, res) => {
+        try {
+            const address = (req.params.address || '').replace(/^0x/, '');
+            if (!isValidAddress(address)) return res.status(400).json({ error: 'Invalid address' });
+            const keyBuf = Buffer.from(address, 'hex');
+            const stakeBuf = await this.stateManager.getContractStorage(STAKING_ADDRESS, keyBuf);
+            const stake = stakeBuf ? new BN(stakeBuf) : new BN(0);
+            res.json({ address: '0x' + address, stake: stake.toString(10) });
+        } catch (e: any) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // Contract verification registry
+    router.get('/contracts/:address', (req, res) => {
+        try {
+            const addr = (req.params.address || '').replace(/^0x/, '');
+            if (!isValidAddress(addr)) return res.status(400).json({ error: 'Invalid address' });
+            const c = this.contractRegistry.get(addr);
+            if (!c) return res.status(404).json({ error: 'Contract not verified' });
+            res.json(c);
+        } catch (e: any) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+    router.post('/contracts/verify', async (req, res) => {
+        try {
+            const { address, name, compilerVersion, source, abi, expectedBytecode } = req.body || {};
+            const addr = (address || '').replace(/^0x/, '');
+            if (!isValidAddress(addr)) return res.status(400).json({ error: 'Invalid address' });
+            if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name required' });
+            if (!source || typeof source !== 'string') return res.status(400).json({ error: 'source required' });
+            if (!Array.isArray(abi)) return res.status(400).json({ error: 'abi must be array' });
+            // Bytecode verification: if expectedBytecode provided, compare with deployed code
+            if (expectedBytecode && typeof expectedBytecode === 'string') {
+                const acc = await this.stateManager.getAccount(addr);
+                if (!acc.codeHash || acc.codeHash.equals(Buffer.alloc(32))) {
+                    return res.status(400).json({ error: 'No contract deployed at this address' });
+                }
+                const deployedCode = await this.stateManager.getCode(acc.codeHash);
+                if (!deployedCode) return res.status(400).json({ error: 'Could not load deployed bytecode' });
+                const expectedHex = expectedBytecode.replace(/^0x/, '').toLowerCase();
+                const deployedHex = deployedCode.toString('hex').toLowerCase();
+                if (deployedHex !== expectedHex) {
+                    return res.status(400).json({ error: 'Bytecode mismatch: provided bytecode does not match deployed contract' });
+                }
+            }
+            const c = await this.contractRegistry.add({ address: '0x' + addr, name, compilerVersion, source, abi });
+            res.json(c);
+        } catch (e: any) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+    router.get('/contracts', (_req, res) => {
+        try {
+            const list = this.contractRegistry.list(100);
+            res.json({ contracts: list });
         } catch (e: any) {
             res.status(500).json({ error: e.message });
         }

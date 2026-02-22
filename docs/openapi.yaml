@@ -1,0 +1,177 @@
+openapi: 3.0.3
+info:
+  title: Bery Chain API
+  description: REST API for Bery blockchain - EVM-compatible chain with BFT consensus
+  version: 1.0.0
+
+servers:
+  - url: /v1
+    description: API base path
+
+paths:
+  /chain/info:
+    get:
+      summary: Chain info
+      responses:
+        '200':
+          description: Chain parameters and status
+  /account/{address}:
+    get:
+      summary: Account balance and nonce
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-fA-F0-9]{40}$'
+      responses:
+        '200':
+          description: Account data
+        '400':
+          description: Invalid address
+  /address/{address}/transactions:
+    get:
+      summary: Transactions for an address
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of transactions
+  /blocks:
+    get:
+      summary: List blocks
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of blocks
+  /block/{id}:
+    get:
+      summary: Block by height or hash
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Block data
+        '404':
+          description: Block not found
+  /tx/{hash}:
+    get:
+      summary: Transaction by hash
+      parameters:
+        - name: hash
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transaction data
+        '404':
+          description: Transaction not found
+  /faucet:
+    post:
+      summary: Request test tokens
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                address:
+                  type: string
+                amount:
+                  type: string
+      responses:
+        '200':
+          description: Funds sent
+        '403':
+          description: Faucet disabled
+  /contracts/{address}:
+    get:
+      summary: Get verified contract metadata
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verified contract (name, source, ABI)
+        '404':
+          description: Contract not verified
+  /contracts/verify:
+    post:
+      summary: Verify and publish contract source
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address, name, source, abi]
+              properties:
+                address:
+                  type: string
+                name:
+                  type: string
+                compilerVersion:
+                  type: string
+                source:
+                  type: string
+                abi:
+                  type: array
+                expectedBytecode:
+                  type: string
+                  description: Compiled bytecode (hex). If provided, must match deployed code.
+      responses:
+        '200':
+          description: Contract verified and published
+        '400':
+          description: Bytecode mismatch or invalid input
+  /staking/info:
+    get:
+      summary: Total staked and stakers list
+      responses:
+        '200':
+          description: totalStaked (wei), stakers [{address, stake}]
+  /staking/{address}:
+    get:
+      summary: Stake for address
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: { address, stake }

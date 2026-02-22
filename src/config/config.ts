@@ -13,7 +13,14 @@ const envSchema = Joi.object({
   BOOTSTRAP_PEERS: Joi.string().allow('').default(''),
   VALIDATORS: Joi.string().allow('').default(''),
   BLOCK_TIME: Joi.number().default(5000), // ms
-  BLOCK_REWARD: Joi.number().default(10), // Tokens per block
+  BLOCK_REWARD: Joi.number().default(13), // Base reward (used if inflation decay disabled)
+  INFLATION_DECAY_ENABLED: Joi.boolean().default(true),
+  INFLATION_INITIAL_RATE: Joi.number().default(0.08), // 8% year 1 (Solana-style)
+  INFLATION_DECAY_RATE: Joi.number().default(0.15), // -15% per year (Solana-style)
+  INFLATION_LONG_TERM_RATE: Joi.number().default(0.015), // 1.5% long-term
+  BLOCKS_PER_YEAR: Joi.number().default(6_307_200), // 5s blocks: 365*24*3600/5
+  FEE_BURN_RATIO: Joi.number().min(0).max(1).default(0.5), // 50% burned, 50% to proposer (Solana-style)
+  GENESIS_SUPPLY_TOTAL: Joi.number().default(1_000_000_000), // Total BRY at genesis (1B), split among validators
   CHAIN_NAME: Joi.string().default('Bery'),
   SYMBOL: Joi.string().default('BRY'),
   NETWORK_ID: Joi.string().default('my-chain-1'),
@@ -28,7 +35,8 @@ const envSchema = Joi.object({
     .min(32)
     .when('NODE_ENV', { is: 'production', then: Joi.string().invalid('bery-insecure-default-change-in-production') })
     .default('bery-insecure-default-change-in-production'),
-  DATABASE_URL: Joi.string().allow('').default('')
+  DATABASE_URL: Joi.string().allow('').default(''),
+  CHAIN_VERSION: Joi.string().allow('').default('1.0.0')
 }).unknown().required();
 
 const { error, value: envVars } = envSchema.validate(process.env);
@@ -44,6 +52,7 @@ export const config = {
     symbol: envVars.SYMBOL,
     chainId: envVars.CHAIN_ID,
     decimals: envVars.DECIMALS,
+    version: envVars.CHAIN_VERSION,
   },
   network: {
     p2pPort: envVars.P2P_PORT,
@@ -65,6 +74,13 @@ export const config = {
     validators: envVars.VALIDATORS ? envVars.VALIDATORS.split(',') : [],
     blockTime: envVars.BLOCK_TIME,
     blockReward: envVars.BLOCK_REWARD,
+    genesisSupplyTotal: envVars.GENESIS_SUPPLY_TOTAL,
+    inflationDecayEnabled: envVars.INFLATION_DECAY_ENABLED,
+    inflationInitialRate: envVars.INFLATION_INITIAL_RATE,
+    inflationDecayRate: envVars.INFLATION_DECAY_RATE,
+    inflationLongTermRate: envVars.INFLATION_LONG_TERM_RATE,
+    blocksPerYear: envVars.BLOCKS_PER_YEAR,
+    feeBurnRatio: envVars.FEE_BURN_RATIO,
   },
   fees: {
     baseFee: envVars.BASE_FEE,

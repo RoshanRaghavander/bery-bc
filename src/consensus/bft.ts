@@ -10,6 +10,7 @@ import { MerkleTree } from '../common/merkle.js';
 import { EventEmitter } from 'events';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/config.js';
+import { getBlockReward } from './tokenomics.js';
 import BN from 'bn.js';
 import { BlockStore } from '../storage/block_store.js';
 import path from 'path';
@@ -463,8 +464,8 @@ export class BFTConsensus extends EventEmitter {
         } else {
             txs = this.mempool.getTransactions(100);
 
-            // Add Coinbase Transaction
-            const reward = new BN(config.consensus.blockReward);
+            // Add Coinbase Transaction (Solana-style inflation decay)
+            const reward = getBlockReward(this.height + 1);
             const coinbaseTx = new Transaction({
                 from: SYSTEM_SENDER,
                 to: this.keyPair.getAddress(),
@@ -814,6 +815,15 @@ export class BFTConsensus extends EventEmitter {
                 try {
                     const execRes3 = await this.vmExecutor.executeBlock(txs);
                     commitReceipts = execRes3.receipts;
+                    // Fee burn: 50% to proposer, 50% burned (Solana-style)
+                    const feeBurnRatio = config.consensus.feeBurnRatio ?? 0.5;
+                    const proposerShare = execRes3.totalFees.muln(Math.floor((1 - feeBurnRatio) * 1000)).divn(1000);
+                    if (proposerShare.gtn(0)) {
+                        const proposer = block.header.validator;
+                        const acc = await this.stateManager.getAccount(proposer);
+                        acc.balance = acc.balance.add(proposerShare);
+                        await this.stateManager.putAccount(proposer, acc);
+                    }
                 } catch (execError) {
                     logger.error(`VM Execution Error: ${execError}`);
                     // If VM fails, we MUST revert state changes from this block

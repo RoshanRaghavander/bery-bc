@@ -83,6 +83,9 @@ async function main() {
     const genesisAcc = await stateManager.getAccount(genesisValidatorAddress);
     if (genesisAcc.balance.isZero() && genesisAcc.nonce.isZero()) {
         logger.info('Genesis: Seeding validator accounts with funds...');
+        const totalSupply = config.consensus.genesisSupplyTotal; // e.g. 1B
+        const perValidator = Math.floor(totalSupply / validators.length);
+        const perValidatorWei = new BN(perValidator.toString()).mul(new BN('1000000000000000000')); // 18 decimals
         for (const v of validators) {
              let addr: string;
              if (v.publicKey.length === 66 || v.publicKey.length === 130) {
@@ -90,10 +93,9 @@ async function main() {
              } else {
                  addr = v.publicKey;
              }
-             
-             const acc = new Account(new BN(0), new BN('1000000000000000000000000')); // 1 Million BRY (18 decimals)
+             const acc = new Account(new BN(0), perValidatorWei);
              await stateManager.putAccount(addr, acc);
-             logger.info(`Funded ${addr} (Val: ${v.publicKey.slice(0,8)}...)`);
+             logger.info(`Funded ${addr} (Val: ${v.publicKey.slice(0,8)}...) with ${perValidator.toLocaleString()} BRY`);
         }
         await stateManager.checkpoint(); // Should commit immediately?
         await stateManager.commit();

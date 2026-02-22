@@ -21,7 +21,7 @@ export class VMExecutor {
     this.workerPath = workerPath || path.resolve(__dirname, 'worker.js');
   }
 
-  public async executeBlock(transactions: Transaction[]): Promise<{ validTxs: Transaction[]; receipts: any[] }> {
+  public async executeBlock(transactions: Transaction[]): Promise<{ validTxs: Transaction[]; receipts: any[]; totalFees: BN }> {
     // Naive parallel execution:
     // 1. We could spin up N workers.
     // 2. Or just one worker for now to prove concept.
@@ -38,6 +38,7 @@ export class VMExecutor {
     const validTxs: Transaction[] = [];
     const receipts: any[] = [];
     let cumulativeGasUsed = 0;
+    let totalFees = new BN(0);
 
     try {
       for (let i = 0; i < transactions.length; i++) {
@@ -50,6 +51,8 @@ export class VMExecutor {
                 result.receipt.cumulativeGasUsed = cumulativeGasUsed;
                 result.receipt.transactionIndex = i;
                 receipts.push(result.receipt);
+                const fee = new BN(result.receipt.gasUsed).mul(tx.gasPrice);
+                totalFees = totalFees.add(fee);
             }
         } catch (e: any) {
             if (e.message === 'Transaction execution timed out') {
@@ -67,7 +70,7 @@ export class VMExecutor {
     } finally {
       await worker.terminate();
     }
-    return { validTxs, receipts };
+    return { validTxs, receipts, totalFees };
   }
 
   private async processTx(worker: Worker, tx: Transaction): Promise<{ applied: boolean; receipt: any }> {
