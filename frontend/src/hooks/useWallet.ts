@@ -26,8 +26,9 @@ export function useWallet() {
   }, []);
 
   const connectWalletConnect = useCallback(async () => {
+    const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || 'fe646570fb3c8caf4c2aef5ead54ba66';
     const wc = await EthereumProvider.init({
-      projectId: 'fe646570fb3c8caf4c2aef5ead54ba66',
+      projectId,
       chains: [CHAIN_ID],
       optionalChains: [CHAIN_ID],
       showQrModal: true,

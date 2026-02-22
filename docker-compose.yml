@@ -31,6 +31,7 @@ services:
       - FAUCET_ENABLED=${FAUCET_ENABLED:-false}
       - FAUCET_TOKEN=${FAUCET_TOKEN:-}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      - DATABASE_URL=${DATABASE_URL:-}
     restart: unless-stopped
     networks:
       - dokploy-network

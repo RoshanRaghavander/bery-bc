@@ -30,6 +30,7 @@ In Dokploy, go to **Environment** and add:
 | `FAUCET_TOKEN` | No | Secret token for faucet (if enabled) |
 | `ALLOWED_ORIGINS` | No | Comma-separated CORS origins (e.g. `https://app.bery.in`) |
 | `VITE_RPC_URL` | No | Full RPC URL for frontend (e.g. `https://your-domain.com/rpc`) – set if app and API use different origins |
+| `DATABASE_URL` | Yes (production) | PostgreSQL connection URL for auth (e.g. `postgresql://user:pass@host:5432/db`). Leave empty to use JSON file. |
 
 ## 3. Domain (HTTPS)
 

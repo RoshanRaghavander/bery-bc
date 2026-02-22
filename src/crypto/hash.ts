@@ -1,6 +1,5 @@
 import sodium from 'sodium-native';
-// @ts-ignore
-import createKeccakHash from 'keccak';
+import { keccak_256 } from '@noble/hashes/sha3.js';
 
 // @ts-ignore
 const sodiumFn = sodium.default || sodium;
@@ -25,7 +24,7 @@ export class Hash {
    */
   static keccak256(data: Buffer | string): Buffer {
     const input = Buffer.isBuffer(data) ? data : Buffer.from(data);
-    return createKeccakHash('keccak256').update(input).digest();
+    return Buffer.from(keccak_256(input));
   }
 
   /**

@@ -5,7 +5,7 @@ dotenv.config();
 
 const envSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
-  P2P_PORT: Joi.number().default(6001),
+  P2P_PORT: Joi.number().default(3000),
   API_PORT: Joi.number().default(8080),
   DATA_DIR: Joi.string().default('./data'),
   PRIVATE_KEY: Joi.string().hex().length(64).optional(),
@@ -24,7 +24,11 @@ const envSchema = Joi.object({
   FAUCET_TOKEN: Joi.string().allow('').default(''),
   BASE_FEE: Joi.number().default(1),
   PRIORITY_FEE: Joi.number().default(1),
-  JWT_SECRET: Joi.string().min(32).default('bery-insecure-default-change-in-production')
+  JWT_SECRET: Joi.string()
+    .min(32)
+    .when('NODE_ENV', { is: 'production', then: Joi.string().invalid('bery-insecure-default-change-in-production') })
+    .default('bery-insecure-default-change-in-production'),
+  DATABASE_URL: Joi.string().allow('').default('')
 }).unknown().required();
 
 const { error, value: envVars } = envSchema.validate(process.env);
@@ -68,5 +72,8 @@ export const config = {
   },
   auth: {
     jwtSecret: envVars.JWT_SECRET
+  },
+  database: {
+    url: envVars.DATABASE_URL || null
   }
 };

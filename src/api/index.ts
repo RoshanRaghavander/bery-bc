@@ -19,7 +19,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs-extra';
 import { Hash } from '../crypto/hash.js';
-import { UserStore } from '../auth/user_store.js';
+import { IUserStore } from '../auth/user_store.js';
 import { signToken, verifyToken } from '../auth/jwt.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -69,9 +69,9 @@ export class APIServer {
   private network: P2PNetwork;
   private consensus?: BFTConsensus;
   private faucetLastByAddress: Map<string, number> = new Map();
-  private userStore?: UserStore;
+  private userStore?: IUserStore;
 
-  constructor(port: number, mempool: Mempool, stateManager: StateManager, network: P2PNetwork, consensus?: BFTConsensus, userStore?: UserStore) {
+  constructor(port: number, mempool: Mempool, stateManager: StateManager, network: P2PNetwork, consensus?: BFTConsensus, userStore?: IUserStore) {
     this.app = express();
     this.port = port;
     this.mempool = mempool;
@@ -177,6 +177,12 @@ export class APIServer {
       this.app.use(helmet());
       this.app.use(compression());
       this.app.use(bodyParser.json({ limit: '100kb' })); // Limit body size
+
+      // Request ID for tracing
+      this.app.use((req: any, _res, next) => {
+        req.id = req.get('x-request-id') || `req_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+        next();
+      });
 
       // General rate limiter: 300 requests per 15 minutes for read-heavy traffic
       const generalLimiter = rateLimit({

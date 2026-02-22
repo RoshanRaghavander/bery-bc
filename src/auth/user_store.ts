@@ -9,9 +9,16 @@ export interface User {
   createdAt: number;
 }
 
+export interface IUserStore {
+  load(): Promise<void>;
+  findByEmail(email: string): Promise<User | null>;
+  create(email: string, password: string): Promise<User>;
+  verifyPassword(email: string, password: string): Promise<User | null>;
+}
+
 const SALT_ROUNDS = 10;
 
-export class UserStore {
+export class UserStore implements IUserStore {
   private filePath: string;
   private users: Map<string, User> = new Map();
 

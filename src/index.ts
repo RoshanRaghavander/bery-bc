@@ -16,7 +16,8 @@ import { logger } from './utils/logger.js';
 
 import { Account } from './state/account.js';
 import BN from 'bn.js';
-import { UserStore } from './auth/user_store.js';
+import { UserStore, IUserStore } from './auth/user_store.js';
+import { PostgresUserStore } from './auth/postgres_user_store.js';
 
 async function main() {
     const dataDir = config.storage.dataDir;
@@ -102,9 +103,17 @@ async function main() {
     // Consensus
     const consensus = new BFTConsensus(keyPair, stateManager, mempool, network, vmExecutor, validators);
 
-    // Auth
-    const userStore = new UserStore(dataDir);
-    await userStore.load();
+    // Auth - PostgreSQL if DATABASE_URL set, else JSON file
+    let userStore: IUserStore;
+    if (config.database?.url) {
+        userStore = new PostgresUserStore(config.database.url);
+        await userStore.load();
+        logger.info('Auth: Using PostgreSQL');
+    } else {
+        userStore = new UserStore(dataDir);
+        await userStore.load();
+        logger.info('Auth: Using JSON file (set DATABASE_URL for PostgreSQL)');
+    }
 
     // API
     const api = new APIServer(apiPort, mempool, stateManager, network, consensus, userStore);
