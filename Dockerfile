@@ -22,7 +22,7 @@ RUN npm install
 COPY frontend/ ./
 ARG VITE_RPC_URL=
 ENV VITE_RPC_URL=${VITE_RPC_URL}
-RUN npm run build
+RUN npm run build && test -f dist/index.html || (echo "Frontend build failed - dist/index.html not found" && exit 1)
 
 # Production Stage
 FROM node:20-alpine

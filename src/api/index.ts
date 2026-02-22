@@ -94,7 +94,11 @@ export class APIServer {
 
   private setupFrontendServing() {
     // Serve static files from the React frontend app
-    const frontendPath = path.join(__dirname, '../../frontend/dist');
+    // Docker: cwd = /app, frontend at /app/frontend/dist
+    // Local: cwd = project root, or use __dirname from dist/api
+    const cwdPath = path.resolve(process.cwd(), 'frontend', 'dist');
+    const relPath = path.resolve(__dirname, '../../frontend/dist');
+    const frontendPath = fs.existsSync(cwdPath) ? cwdPath : relPath;
     this.app.use(express.static(frontendPath));
 
     this.app.get('/favicon.ico', (req, res) => {
