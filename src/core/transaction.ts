@@ -13,6 +13,8 @@ export interface TransactionData {
   gasPrice?: BN;
   data?: Buffer;
   signature?: Buffer;
+  /** Ethereum tx hash override - when set, used for eth_getTransactionByHash lookup */
+  ethHash?: Buffer;
 }
 
 export class Transaction {
@@ -25,6 +27,7 @@ export class Transaction {
   public readonly data: Buffer;
   public signature?: Buffer;
   private _hash?: Buffer;
+  private _ethHash?: Buffer;
 
   constructor(txData: TransactionData) {
     this.from = txData.from;
@@ -35,6 +38,7 @@ export class Transaction {
     this.gasPrice = txData.gasPrice || new BN(1); // Default gas price
     this.data = txData.data || Buffer.alloc(0);
     this.signature = txData.signature;
+    this._ethHash = txData.ethHash;
   }
 
   /**
@@ -67,6 +71,7 @@ export class Transaction {
    * Computes the hash of the transaction (including signature if present)
    */
   public get hash(): Buffer {
+    if (this._ethHash) return this._ethHash;
     if (this._hash) return this._hash;
     
     const base = this.getBytes();
@@ -125,7 +130,8 @@ export class Transaction {
       gasPrice: this.gasPrice.toString(10),
       data: this.data.toString('hex'),
       signature: this.signature?.toString('hex'),
-      hash: this.hash.toString('hex')
+      hash: this.hash.toString('hex'),
+      ethHash: this._ethHash?.toString('hex')
     };
   }
 
@@ -138,7 +144,8 @@ export class Transaction {
           gasLimit: json.gasLimit,
           gasPrice: json.gasPrice ? new BN(json.gasPrice) : undefined,
           data: json.data ? Buffer.from(json.data, 'hex') : undefined,
-          signature: json.signature ? Buffer.from(json.signature, 'hex') : undefined
+          signature: json.signature ? Buffer.from(json.signature, 'hex') : undefined,
+          ethHash: json.ethHash ? Buffer.from(json.ethHash, 'hex') : undefined
       });
   }
 }

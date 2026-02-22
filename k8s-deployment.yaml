@@ -1,11 +1,36 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: blockchain-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  # storageClassName: standard  # Use your cluster's default or specify
+---
+# Secret for production - create with: kubectl create secret generic bery-chain-secrets --from-literal=PRIVATE_KEY=... --from-literal=JWT_SECRET=...
+# Or use SealedSecrets / external-secrets for GitOps
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bery-chain-secrets
+type: Opaque
+stringData:
+  # Replace with your values - DO NOT commit real secrets
+  PRIVATE_KEY: "REPLACE_WITH_64_HEX_VALIDATOR_KEY"
+  JWT_SECRET: "REPLACE_WITH_32_PLUS_CHAR_SECRET"
+---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: blockchain-node
   labels:
     app: blockchain-node
 spec:
-  replicas: 3
+  serviceName: blockchain-node
+  replicas: 1
   selector:
     matchLabels:
       app: blockchain-node
@@ -19,16 +44,47 @@ spec:
         image: blockchain-node:latest
         ports:
         - containerPort: 8080
+          name: api
         - containerPort: 3000
+          name: p2p
         env:
         - name: DATA_DIR
           value: "/data"
+        - name: NODE_ENV
+          value: "production"
+        - name: LISTEN_ADDRESS
+          value: "0.0.0.0"
+        - name: P2P_PORT
+          value: "3000"
+        - name: API_PORT
+          value: "8080"
+        envFrom:
+        - secretRef:
+            name: bery-chain-secrets
         volumeMounts:
         - name: data-volume
           mountPath: /data
-      volumes:
-      - name: data-volume
-        emptyDir: {}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: data-volume
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 50Gi
 ---
 apiVersion: v1
 kind: Service
@@ -41,4 +97,9 @@ spec:
   - protocol: TCP
     port: 80
     targetPort: 8080
+    name: api
+  - protocol: TCP
+    port: 3000
+    targetPort: 3000
+    name: p2p
   type: LoadBalancer

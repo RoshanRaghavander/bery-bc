@@ -86,6 +86,14 @@ export class Mempool extends EventEmitter {
       return this.txs.has(hashStr);
   }
 
+  /**
+   * Get a transaction by hash (for pending tx lookup)
+   */
+  public get(txHash: string | Buffer): Transaction | undefined {
+      const hashStr = Buffer.isBuffer(txHash) ? txHash.toString('hex') : String(txHash).replace(/^0x/, '');
+      return this.txs.get(hashStr);
+  }
+
   public size(): number {
       return this.txs.size;
   }

@@ -56,4 +56,12 @@ export class LevelDB implements IDatabase {
   async close(): Promise<void> {
     await this.db.close();
   }
+
+  createReadStream(opts?: { gte?: Buffer; lte?: Buffer; limit?: number }): NodeJS.ReadableStream {
+    const o: any = {};
+    if (opts?.gte) o.gte = opts.gte;
+    if (opts?.lte) o.lte = opts.lte;
+    if (opts?.limit) o.limit = opts.limit;
+    return (this.db as any).createReadStream(o);
+  }
 }

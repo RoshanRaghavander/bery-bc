@@ -10,7 +10,8 @@
     "start:dev": "ts-node --esm src/index.ts",
     "test": "npm run build && node --test tests/*.spec.js",
     "gen-keys": "ts-node --esm scripts/gen-keys.ts",
-    "create-wallet": "ts-node --esm scripts/create-wallet.ts"
+    "create-wallet": "ts-node --esm scripts/create-wallet.ts",
+    "build-frontend": "cd frontend && npm install && npm run build"
   },
   "keywords": [],
   "author": "",
@@ -22,6 +23,10 @@
   "dependencies": {
     "@chainsafe/libp2p-gossipsub": "^14.1.2",
     "@chainsafe/libp2p-noise": "^17.0.0",
+    "@ethereumjs/common": "^4.0.0",
+    "@ethereumjs/tx": "^5.2.1",
+    "@ethereumjs/util": "^9.1.0",
+    "@ethereumjs/vm": "^6.0.0",
     "@libp2p/bootstrap": "^12.0.11",
     "@libp2p/crypto": "^5.1.13",
     "@libp2p/floodsub": "^11.0.11",
@@ -38,6 +43,7 @@
     "@types/fs-extra": "^11.0.4",
     "@types/ws": "^8.18.1",
     "axios": "^1.13.5",
+    "bcrypt": "^5.1.1",
     "bn.js": "^5.2.2",
     "body-parser": "^2.2.2",
     "compression": "^1.8.1",
@@ -50,6 +56,7 @@
     "it-length-prefixed": "^10.0.1",
     "it-pipe": "^3.0.1",
     "joi": "^18.0.2",
+    "jsonwebtoken": "^9.0.2",
     "level": "^10.0.0",
     "libp2p": "^3.1.3",
     "merkle-patricia-tree": "^4.2.4",
@@ -59,16 +66,14 @@
     "typescript": "^5.9.3",
     "uint8arrays": "^5.1.0",
     "winston": "^3.19.0",
-    "ws": "^8.19.0",
-    "@ethereumjs/tx": "^5.2.1",
-    "@ethereumjs/util": "^9.1.0",
-    "@ethereumjs/vm": "^6.0.0",
-    "@ethereumjs/common": "^4.0.0"
+    "ws": "^8.19.0"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.19",
     "@types/jest": "^30.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.2.1",
     "jest": "^30.2.0",
     "ts-jest": "^29.4.6"

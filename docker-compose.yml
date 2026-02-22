@@ -1,31 +1,43 @@
-version: '3.8'
+# Dokploy / GitHub deployment
+# - Set env vars in Dokploy UI (Environment tab) or via .env
+# - Add domain in Dokploy Domains tab for HTTPS (routes to port 8080)
+# - P2P port 3000 must stay exposed for validator peers
 
 services:
-  backend:
-    build: .
+  bery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_RPC_URL: ${VITE_RPC_URL:-}
     ports:
-      - "8080:8080" # API & WS
-      - "3000:3000" # P2P
+      - "8080:8080"
+      - "3000:3000"
+    expose:
+      - 8080
     volumes:
-      - ./data/backend:/data
+      - bery-data:/data
+    env_file:
+      - .env
     environment:
+      - NODE_ENV=production
+      - DATA_DIR=/data
       - P2P_PORT=3000
       - API_PORT=8080
-      - PRIVATE_KEY=${PRIVATE_KEY:-c0c237c395fa01d975651c346995e378ab199cc1b40c6dbb353fad9363c2d621}
-      - BOOTSTRAP_PEERS=${BOOTSTRAP_PEERS}
+      - LISTEN_ADDRESS=0.0.0.0
+      - PRIVATE_KEY=${PRIVATE_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - BOOTSTRAP_PEERS=${BOOTSTRAP_PEERS:-}
+      - FAUCET_ENABLED=${FAUCET_ENABLED:-false}
+      - FAUCET_TOKEN=${FAUCET_TOKEN:-}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
     restart: unless-stopped
     networks:
-      - bery-net
+      - dokploy-network
 
-  frontend:
-    build: ./frontend
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-    networks:
-      - bery-net
+volumes:
+  bery-data:
 
 networks:
-  bery-net:
-    driver: bridge
+  dokploy-network:
+    external: true

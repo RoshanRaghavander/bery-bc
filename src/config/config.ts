@@ -9,6 +9,7 @@ const envSchema = Joi.object({
   API_PORT: Joi.number().default(8080),
   DATA_DIR: Joi.string().default('./data'),
   PRIVATE_KEY: Joi.string().hex().length(64).optional(),
+  LISTEN_ADDRESS: Joi.string().default('0.0.0.0'),
   BOOTSTRAP_PEERS: Joi.string().allow('').default(''),
   VALIDATORS: Joi.string().allow('').default(''),
   BLOCK_TIME: Joi.number().default(5000), // ms
@@ -22,7 +23,8 @@ const envSchema = Joi.object({
   FAUCET_ENABLED: Joi.boolean().default(false),
   FAUCET_TOKEN: Joi.string().allow('').default(''),
   BASE_FEE: Joi.number().default(1),
-  PRIORITY_FEE: Joi.number().default(1)
+  PRIORITY_FEE: Joi.number().default(1),
+  JWT_SECRET: Joi.string().min(32).default('bery-insecure-default-change-in-production')
 }).unknown().required();
 
 const { error, value: envVars } = envSchema.validate(process.env);
@@ -41,6 +43,7 @@ export const config = {
   },
   network: {
     p2pPort: envVars.P2P_PORT,
+    listenAddress: envVars.LISTEN_ADDRESS,
     bootstrapPeers: envVars.BOOTSTRAP_PEERS ? envVars.BOOTSTRAP_PEERS.split(',') : [],
     networkId: envVars.NETWORK_ID,
   },
@@ -62,5 +65,8 @@ export const config = {
   fees: {
     baseFee: envVars.BASE_FEE,
     priorityFee: envVars.PRIORITY_FEE
+  },
+  auth: {
+    jwtSecret: envVars.JWT_SECRET
   }
 };

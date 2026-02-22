@@ -1,5 +1,5 @@
-# Build Stage
-FROM node:20-alpine AS builder
+# Build Stage - Backend
+FROM node:20-alpine AS backend-builder
 
 WORKDIR /app
 
@@ -10,6 +10,20 @@ RUN npm install
 COPY src ./src
 RUN npm run build
 
+# Build Stage - Frontend
+# For production: pass --build-arg VITE_RPC_URL=https://rpc.bery.in when API is on different origin
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app/frontend
+
+COPY frontend/package*.json ./
+RUN npm install
+
+COPY frontend/ ./
+ARG VITE_RPC_URL=
+ENV VITE_RPC_URL=${VITE_RPC_URL}
+RUN npm run build
+
 # Production Stage
 FROM node:20-alpine
 
@@ -18,7 +32,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install --production
 
-COPY --from=builder /app/dist ./dist
+COPY --from=backend-builder /app/dist ./dist
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Environment Variables
 ENV NODE_ENV=production

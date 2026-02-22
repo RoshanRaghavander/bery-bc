@@ -23,9 +23,18 @@ export class BlockStore {
         await this.db.put(Buffer.from(`index:blockHash:${blockHash}`), Buffer.from(height.toString()));
 
         // Index Transactions -> Height
+        // Index Address -> Tx (for fast lookup: index:addr:${addr}:${txHash} -> height)
         for (const tx of block.transactions) {
             const txHash = tx.hash.toString('hex');
             await this.db.put(Buffer.from(`index:tx:${txHash}`), Buffer.from(height.toString()));
+            const from = (tx.from || '').replace(/^0x/, '');
+            if (from && from.length === 40) {
+                await this.db.put(Buffer.from(`index:addr:${from}:${txHash}`), Buffer.from(height.toString()));
+            }
+            const to = (tx.to || '').replace(/^0x/, '');
+            if (to && to.length === 40) {
+                await this.db.put(Buffer.from(`index:addr:${to}:${txHash}`), Buffer.from(height.toString()));
+            }
         }
         
         // Update Head
@@ -74,6 +83,40 @@ export class BlockStore {
             blockHeight: height,
             blockHash: block.hash.toString('hex')
         };
+    }
+
+    /** Get transactions involving an address (indexed, fast lookup) */
+    async getTransactionsByAddress(addr: string, limit: number = 50, offset: number = 0): Promise<Array<{ txHash: string; height: number; blockHash: string }>> {
+        const clean = (addr || '').replace(/^0x/, '');
+        if (clean.length !== 40) return [];
+        const prefix = `index:addr:${clean}:`;
+        const prefixBuf = Buffer.from(prefix);
+        const endBuf = Buffer.from(prefix + '\xff');
+        const results: Array<{ txHash: string; height: number }> = [];
+        const ldb = this.db as any;
+        if (!ldb.createReadStream) return [];
+        return new Promise((resolve, reject) => {
+            const stream = ldb.createReadStream({ gte: prefixBuf, lte: endBuf, limit: offset + limit });
+            let skipped = 0;
+            stream
+                .on('data', (data: { key: Buffer; value: Buffer }) => {
+                    if (skipped < offset) { skipped++; return; }
+                    const key = data.key.toString();
+                    const txHash = key.slice(prefix.length);
+                    const height = parseInt(data.value.toString(), 10);
+                    results.push({ txHash, height });
+                })
+                .on('end', async () => {
+                    results.sort((a, b) => b.height - a.height);
+                    const out: Array<{ txHash: string; height: number; blockHash: string }> = [];
+                    for (const { txHash, height } of results) {
+                        const block = await this.getBlock(height);
+                        out.push({ txHash, height, blockHash: block ? block.hash.toString('hex') : '' });
+                    }
+                    resolve(out);
+                })
+                .on('error', reject);
+        });
     }
 
     async saveReceipts(height: number, blockHash: string, receipts: any[]): Promise<void> {

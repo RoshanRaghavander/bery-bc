@@ -19,9 +19,45 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs-extra';
 import { Hash } from '../crypto/hash.js';
+import { UserStore } from '../auth/user_store.js';
+import { signToken, verifyToken } from '../auth/jwt.js';
 
 const __filename = fileURLToPath(import.meta.url);
+
+const ADDRESS_REGEX = /^[a-fA-F0-9]{40}$/;
+const HEX_REGEX = /^[a-fA-F0-9]+$/;
+
+function isValidAddress(addr: string): boolean {
+  const clean = String(addr || '').replace(/^0x/, '');
+  return ADDRESS_REGEX.test(clean);
+}
+
+function validateFaucetBody(body: any): { address: string; amount?: string } | { error: string } {
+  const address = body?.address;
+  if (!address || typeof address !== 'string') return { error: 'Address required' };
+  const addrClean = address.replace(/^0x/, '');
+  if (!ADDRESS_REGEX.test(addrClean)) return { error: 'Invalid address format (expected 40 hex chars)' };
+  const amount = body?.amount;
+  if (amount != null && (typeof amount !== 'string' || !/^\d+$/.test(amount))) {
+    return { error: 'Amount must be a non-negative integer string (wei)' };
+  }
+  return { address: addrClean, amount: amount || '1000000000000000000' };
+}
+
+function validateTxBody(body: any): { error?: string } {
+  if (!body?.from || typeof body.from !== 'string') return { error: 'Missing required field: from' };
+  if (!body?.signature || typeof body.signature !== 'string') return { error: 'Missing required field: signature' };
+  const fromClean = body.from.replace(/^0x/, '');
+  if (!ADDRESS_REGEX.test(fromClean)) return { error: 'Invalid from address' };
+  if (body.to != null && body.to !== '' && !ADDRESS_REGEX.test(String(body.to).replace(/^0x/, ''))) {
+    return { error: 'Invalid to address' };
+  }
+  if (body.signature && !HEX_REGEX.test(body.signature.replace(/^0x/, ''))) return { error: 'Invalid signature (hex)' };
+  return {};
+}
 const __dirname = path.dirname(__filename);
+
+const FAUCET_ADDRESS_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour per address
 
 export class APIServer {
   private app: express.Application;
@@ -32,20 +68,24 @@ export class APIServer {
   private stateManager: StateManager;
   private network: P2PNetwork;
   private consensus?: BFTConsensus;
+  private faucetLastByAddress: Map<string, number> = new Map();
+  private userStore?: UserStore;
 
-  constructor(port: number, mempool: Mempool, stateManager: StateManager, network: P2PNetwork, consensus?: BFTConsensus) {
+  constructor(port: number, mempool: Mempool, stateManager: StateManager, network: P2PNetwork, consensus?: BFTConsensus, userStore?: UserStore) {
     this.app = express();
     this.port = port;
     this.mempool = mempool;
     this.stateManager = stateManager;
     this.network = network;
     this.consensus = consensus;
+    this.userStore = userStore;
 
     // Create HTTP Server for WS upgrade
     this.server = createServer(this.app);
     this.wss = new WebSocketServer({ server: this.server });
 
     this.setupMiddleware();
+    this.setupAuthRoutes();
     this.setupRoutes();
     this.setupV1Routes();
     this.setupFrontendServing();
@@ -61,9 +101,24 @@ export class APIServer {
         res.status(204).end();
     });
 
-    // Health check
+    // Health check (liveness - process is running)
     this.app.get('/health', (req, res) => {
         res.json({ status: 'ok', timestamp: Date.now() });
+    });
+
+    // Readiness (ready to serve - consensus synced)
+    this.app.get('/ready', async (req, res) => {
+        try {
+            const consensusReady = !!this.consensus;
+            const height = this.consensus ? this.consensus.getHeight() : 0;
+            res.status(consensusReady ? 200 : 503).json({
+                ready: consensusReady,
+                height,
+                timestamp: Date.now(),
+            });
+        } catch {
+            res.status(503).json({ ready: false, timestamp: Date.now() });
+        }
     });
 
     // Anything that doesn't match the above, send back index.html
@@ -119,14 +174,70 @@ export class APIServer {
       this.app.use(compression());
       this.app.use(bodyParser.json({ limit: '100kb' })); // Limit body size
 
-      // Rate limiter: 100 requests per 15 minutes
-      const limiter = rateLimit({
-        windowMs: 15 * 60 * 1000, 
-        max: 100,
+      // General rate limiter: 300 requests per 15 minutes for read-heavy traffic
+      const generalLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 300,
         standardHeaders: true,
         legacyHeaders: false,
       });
-      this.app.use(limiter);
+      this.app.use(generalLimiter);
+
+      // Store stricter limiters for sensitive routes (applied in setupRoutes)
+      this.app.locals.faucetLimiter = rateLimit({
+        windowMs: 60 * 60 * 1000, // 1 hour
+        max: 5,
+        standardHeaders: true,
+        message: { error: 'Faucet rate limit exceeded. Try again later.' },
+      });
+      this.app.locals.txLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 60,
+        standardHeaders: true,
+        message: { error: 'Transaction submission rate limit exceeded.' },
+      });
+  }
+
+  private setupAuthRoutes() {
+    if (!this.userStore) return;
+    const store = this.userStore;
+
+    this.app.post('/auth/signup', async (req, res) => {
+      try {
+        const { email, password } = req.body || {};
+        if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
+          return res.status(400).json({ error: 'Email and password required' });
+        }
+        if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+        const user = await store.create(email.trim(), password);
+        const token = signToken({ userId: user.id, email: user.email });
+        res.json({ token, user: { id: user.id, email: user.email } });
+      } catch (e: any) {
+        res.status(400).json({ error: e.message || 'Signup failed' });
+      }
+    });
+
+    this.app.post('/auth/signin', async (req, res) => {
+      try {
+        const { email, password } = req.body || {};
+        if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+        const user = await store.verifyPassword(email.trim(), password);
+        if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+        const token = signToken({ userId: user.id, email: user.email });
+        res.json({ token, user: { id: user.id, email: user.email } });
+      } catch {
+        res.status(500).json({ error: 'Signin failed' });
+      }
+    });
+
+    this.app.get('/auth/me', (req, res) => {
+      const auth = req.headers.authorization;
+      const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+      if (!token) return res.status(401).json({ error: 'Not authenticated' });
+      const payload = verifyToken(token);
+      if (!payload) return res.status(401).json({ error: 'Invalid or expired token' });
+      res.json({ user: { id: payload.userId, email: payload.email } });
+    });
   }
 
   private setupV1Routes() {
@@ -176,13 +287,21 @@ export class APIServer {
         }
     });
 
-    // POST /faucet
-    router.post('/faucet', async (req, res) => {
+    // POST /v1/faucet (stricter rate limit + per-address cooldown)
+    router.post('/faucet', (req: any, res: any, next: any) => {
+      (this.app.locals.faucetLimiter as any)(req, res, next);
+    }, async (req, res) => {
         try {
              if (!config.api.faucetEnabled) return res.status(403).json({ error: 'Faucet disabled' });
              const token = req.header('x-faucet-token');
-             if (!config.api.faucetToken || token !== config.api.faucetToken) return res.status(401).json({ error: 'Unauthorized' });
-             const { address, amount } = req.body;
+             if (config.api.faucetToken && token !== config.api.faucetToken) return res.status(401).json({ error: 'Unauthorized' });
+             const validated = validateFaucetBody(req.body);
+             if ('error' in validated) return res.status(400).json({ error: validated.error });
+             const { address, amount } = validated;
+             const last = this.faucetLastByAddress.get(address);
+             if (last && Date.now() - last < FAUCET_ADDRESS_COOLDOWN_MS) {
+               return res.status(429).json({ error: `Address cooldown. Try again in ${Math.ceil((FAUCET_ADDRESS_COOLDOWN_MS - (Date.now() - last)) / 60000)} minutes.` });
+             }
              if (!this.consensus) return res.status(503).json({ error: 'Consensus not ready' });
              
              // Use Node's Wallet
@@ -208,6 +327,7 @@ export class APIServer {
              
             if (await this.mempool.add(tx)) {
                  await this.network.broadcastTx(tx);
+                 this.faucetLastByAddress.set(address, Date.now());
                  res.json({ hash: tx.hash.toString('hex'), message: 'Funds sent!' });
              } else {
                  res.status(400).json({ error: 'Failed to add faucet tx to mempool' });
@@ -238,7 +358,8 @@ export class APIServer {
     // GET /v1/account/:address
     router.get('/account/:address', async (req, res) => {
         try {
-            const address = req.params.address;
+            const address = (req.params.address || '').replace(/^0x/, '');
+            if (!isValidAddress(address)) return res.status(400).json({ error: 'Invalid address format' });
             const account = await this.stateManager.getAccount(address);
             res.json({
                 address,
@@ -250,14 +371,30 @@ export class APIServer {
         }
     });
 
-    // POST /v1/tx/send
-    router.post('/tx/send', async (req, res) => {
+    // GET /v1/address/:address/transactions (indexed)
+    router.get('/address/:address/transactions', async (req, res) => {
         try {
+            if (!this.consensus) return res.status(503).json({ error: 'Node not ready' });
+            const address = (req.params.address || '').replace(/^0x/, '');
+            if (!isValidAddress(address)) return res.status(400).json({ error: 'Invalid address format' });
+            const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+            const offset = parseInt(req.query.offset as string) || 0;
+            const store = this.consensus.getBlockStore();
+            const txs = await store.getTransactionsByAddress(address, limit, offset);
+            res.json({ transactions: txs, address });
+        } catch (e: any) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // POST /v1/tx/send (stricter rate limit)
+    router.post('/tx/send', (req: any, res: any, next: any) => {
+      (this.app.locals.txLimiter as any)(req, res, next);
+    }, async (req, res) => {
+        try {
+            const val = validateTxBody(req.body);
+            if (val.error) return res.status(400).json({ error: val.error });
             const { from, to, value, nonce, signature, gasLimit, gasPrice, data } = req.body;
-            
-            if (!from || !signature) {
-                 return res.status(400).json({ error: 'Missing required fields' });
-            }
 
             const tx = new Transaction({
                 from,
@@ -313,8 +450,18 @@ export class APIServer {
                 });
             }
 
-            // If not in block, maybe in mempool?
-            // TODO: Add get(hash) to Mempool
+            // Check mempool for pending transactions
+            const hashNormalized = hash.replace(/^0x/, '');
+            const pendingTx = this.mempool.get(hashNormalized);
+            if (pendingTx) {
+                return res.json({
+                    status: 'pending',
+                    hash: hashNormalized,
+                    blockHeight: null,
+                    blockHash: null,
+                    tx: pendingTx.toJSON()
+                });
+            }
             
             res.status(404).json({ error: 'Transaction not found' });
         } catch (e: any) {
@@ -412,7 +559,8 @@ export class APIServer {
 
     this.app.get('/balance/:address', async (req, res) => {
       try {
-        const address = req.params.address;
+        const address = (req.params.address || '').replace(/^0x/, '');
+        if (!isValidAddress(address)) return res.status(400).json({ error: 'Invalid address format' });
         const account = await this.stateManager.getAccount(address);
         res.json({
           address,
@@ -443,23 +591,42 @@ export class APIServer {
                     }
                     case 'eth_getTransactionByHash': {
                         const hash = (params?.[0] || '').replace('0x', '');
-                        if (!this.consensus) return null;
-                        const bs = this.consensus.getBlockStore();
-                        const txData = await bs.getTransaction(hash);
-                        if (!txData) return null;
-                        const t = txData.tx;
-                        return {
-                            hash: '0x' + t.hash.toString('hex'),
-                            from: '0x' + t.from,
-                            to: t.to ? '0x' + t.to : null,
-                            nonce: '0x' + t.nonce.toString(16),
-                            value: '0x' + t.value.toString(16),
-                            gas: '0x' + t.gasLimit.toString(16),
-                            gasPrice: '0x' + t.gasPrice.toString(16),
-                            input: '0x' + t.data.toString('hex'),
-                            blockHash: '0x' + txData.blockHash,
-                            blockNumber: '0x' + txData.blockHeight.toString(16),
-                        };
+                        const bs = this.consensus?.getBlockStore();
+                        if (bs) {
+                            const txData = await bs.getTransaction(hash);
+                            if (txData) {
+                                const t = txData.tx;
+                                return {
+                                    hash: '0x' + t.hash.toString('hex'),
+                                    from: '0x' + t.from,
+                                    to: t.to ? '0x' + t.to : null,
+                                    nonce: '0x' + t.nonce.toString(16),
+                                    value: '0x' + t.value.toString(16),
+                                    gas: '0x' + t.gasLimit.toString(16),
+                                    gasPrice: '0x' + t.gasPrice.toString(16),
+                                    input: '0x' + t.data.toString('hex'),
+                                    blockHash: '0x' + txData.blockHash,
+                                    blockNumber: '0x' + txData.blockHeight.toString(16),
+                                };
+                            }
+                        }
+                        const pending = this.mempool.get(hash);
+                        if (pending) {
+                            const t = pending;
+                            return {
+                                hash: '0x' + t.hash.toString('hex'),
+                                from: '0x' + t.from,
+                                to: t.to ? '0x' + t.to : null,
+                                nonce: '0x' + t.nonce.toString(16),
+                                value: '0x' + t.value.toString(16),
+                                gas: '0x' + t.gasLimit.toString(16),
+                                gasPrice: '0x' + t.gasPrice.toString(16),
+                                input: '0x' + t.data.toString('hex'),
+                                blockHash: null,
+                                blockNumber: null,
+                            };
+                        }
+                        return null;
                     }
                     case 'eth_getBlockByNumber': {
                         const tag = params?.[0] || 'latest';
@@ -595,7 +762,6 @@ export class APIServer {
                         const txMod: any = await import('@ethereumjs/tx');
                         const utilMod: any = await import('@ethereumjs/util');
                         const EthTx = txMod.Transaction;
-                        const Address = utilMod.Address;
                         const tx = EthTx.fromSerializedTx(Buffer.from(raw, 'hex'));
                         const sender = tx.getSenderAddress();
                         const to = tx.to ? tx.to.toString() : '';
@@ -604,6 +770,7 @@ export class APIServer {
                         const gasLimit = Number(tx.gasLimit);
                         const gasPrice = tx.gasPrice || tx.maxFeePerGas || tx.maxPriorityFeePerGas || new BN(config.fees.baseFee + config.fees.priorityFee);
                         const data = tx.data;
+                        const ethHash = Buffer.from(tx.hash().slice(2), 'hex');
                         let vNum = Number(tx.v);
                         let recid = 0;
                         const chainId = tx.common.customChain?.chainId || tx.common.chainIdBN()?.toNumber() || config.chain.chainId;
@@ -626,12 +793,13 @@ export class APIServer {
                             gasLimit,
                             gasPrice: new BN(gasPrice.toString()),
                             data: Buffer.from(data),
-                            signature: sig
+                            signature: sig,
+                            ethHash
                         });
                         if (!ourTx.verify()) return { error: 'Invalid signature' };
                         if (await this.mempool.add(ourTx)) {
                             await this.network.broadcastTx(ourTx);
-                            return '0x' + ourTx.hash.toString('hex');
+                            return '0x' + ethHash.toString('hex');
                         }
                         return { error: 'Rejected' };
                     }
@@ -646,13 +814,15 @@ export class APIServer {
         }
     });
 
+    // Wallet creation: returns address + publicKey only. Never returns privateKey in production.
+    // For secure wallets, use client-side creation (MetaMask, ethers.Wallet.createRandom()).
     this.app.post('/wallet/create', (req, res) => {
         try {
             const kp = new KeyPair();
             res.json({
                 address: kp.getAddress(),
                 publicKey: kp.publicKey.toString('hex'),
-                privateKey: kp.privateKey.toString('hex')
+                message: 'Use client-side wallet creation (MetaMask, ethers.js) for production. Private keys must never touch the server.'
             });
         } catch (e: any) {
             logger.error(`API Error /wallet/create: ${e.message}`);
@@ -660,13 +830,20 @@ export class APIServer {
         }
     });
 
-    this.app.post('/faucet', async (req, res) => {
+    this.app.post('/faucet', (req: any, res: any, next: any) => {
+      (this.app.locals.faucetLimiter as any)(req, res, next);
+    }, async (req, res) => {
         try {
             if (!config.api.faucetEnabled) return res.status(403).json({ error: 'Faucet disabled' });
             const token = req.header('x-faucet-token');
-            if (!config.api.faucetToken || token !== config.api.faucetToken) return res.status(401).json({ error: 'Unauthorized' });
-            const { address, amount } = req.body;
-            if (!address) return res.status(400).json({ error: 'Address required' });
+            if (config.api.faucetToken && token !== config.api.faucetToken) return res.status(401).json({ error: 'Unauthorized' });
+            const validated = validateFaucetBody(req.body);
+            if ('error' in validated) return res.status(400).json({ error: validated.error });
+            const { address, amount } = validated;
+            const last = this.faucetLastByAddress.get(address);
+            if (last && Date.now() - last < FAUCET_ADDRESS_COOLDOWN_MS) {
+              return res.status(429).json({ error: `Address cooldown. Try again in ${Math.ceil((FAUCET_ADDRESS_COOLDOWN_MS - (Date.now() - last)) / 60000)} minutes.` });
+            }
 
             if (!this.consensus) return res.status(503).json({ error: 'Consensus not ready' });
 
@@ -695,6 +872,7 @@ export class APIServer {
 
             if (await this.mempool.add(tx)) {
                 await this.network.broadcastTx(tx);
+                this.faucetLastByAddress.set(address, Date.now());
                 logger.info(`Faucet: Sent 1 BRY to ${address} (Tx: ${tx.hash.toString('hex')})`);
                 res.json({ 
                     success: true, 
@@ -710,14 +888,13 @@ export class APIServer {
         }
     });
 
-    this.app.post('/tx', async (req, res) => {
+    this.app.post('/tx', (req: any, res: any, next: any) => {
+      (this.app.locals.txLimiter as any)(req, res, next);
+    }, async (req, res) => {
       try {
+        const val = validateTxBody(req.body);
+        if (val.error) return res.status(400).json({ error: val.error });
         const { from, to, value, nonce, signature, gasLimit, gasPrice, data } = req.body;
-        
-        // Basic Validation
-        if (!from || !signature) {
-             return res.status(400).json({ error: 'Missing required fields' });
-        }
 
         const tx = new Transaction({
             from,

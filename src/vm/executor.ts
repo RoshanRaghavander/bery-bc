@@ -195,7 +195,7 @@ export class VMExecutor {
     const evmMod: any = await import('../evm/index.js');
     const from = '0x' + tx.from;
     const to = (tx.to ? '0x' + tx.to : '0x').replace('0x0', '0x');
-    const res = await evmMod.evmCall(this.stateManager, config.chain.chainId, {
+    const res = await evmMod.evmCallWithPersist(this.stateManager, config.chain.chainId, {
       from,
       to: to.replace('0x', ''),
       data: '0x' + tx.data.toString('hex'),
@@ -203,18 +203,10 @@ export class VMExecutor {
       gas: tx.gasLimit
     });
 
-    const utilMod: any = await import('@ethereumjs/util');
-    const { Address, Account } = utilMod;
-    const fromAddr = Address.fromString('0x' + tx.from);
-    const toAddr = Address.fromString('0x' + (tx.to || ''));
-    const vm = await evmMod.createVM(config.chain.chainId);
-    await vm.stateManager.putAccount(fromAddr, new Account());
-    await vm.stateManager.putAccount(toAddr, new Account());
-
-    const senderUpdated = await this.stateManager.getAccount(tx.from);
-    const receiverUpdated = await this.stateManager.getAccount(tx.to || '');
-    await this.stateManager.putAccount(tx.from, senderUpdated);
-    if (tx.to) await this.stateManager.putAccount(tx.to, receiverUpdated);
+    const gasCost = new BN(res.gasUsed || 0).mul(tx.gasPrice);
+    const sender = await this.stateManager.getAccount(tx.from);
+    sender.balance = sender.balance.sub(gasCost);
+    await this.stateManager.putAccount(tx.from, sender);
 
     const receipt = {
       transactionHash: tx.hash.toString('hex'),

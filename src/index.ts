@@ -16,6 +16,7 @@ import { logger } from './utils/logger.js';
 
 import { Account } from './state/account.js';
 import BN from 'bn.js';
+import { UserStore } from './auth/user_store.js';
 
 async function main() {
     const dataDir = config.storage.dataDir;
@@ -46,8 +47,9 @@ async function main() {
     const libp2pKey = await keys.privateKeyFromRaw(keyPair.privateKey);
 
     // Config P2P
+    const listenAddr = config.network.listenAddress || '0.0.0.0';
     const network = new P2PNetwork({
-        listenAddresses: [`/ip4/127.0.0.1/tcp/${p2pPort}`],
+        listenAddresses: [`/ip4/${listenAddr}/tcp/${p2pPort}`],
         bootstrapPeers: bootstrapPeers,
         privateKey: libp2pKey
     });
@@ -100,9 +102,12 @@ async function main() {
     // Consensus
     const consensus = new BFTConsensus(keyPair, stateManager, mempool, network, vmExecutor, validators);
 
+    // Auth
+    const userStore = new UserStore(dataDir);
+    await userStore.load();
 
     // API
-    const api = new APIServer(apiPort, mempool, stateManager, network, consensus);
+    const api = new APIServer(apiPort, mempool, stateManager, network, consensus, userStore);
 
     // Start Everything
     await network.start();
