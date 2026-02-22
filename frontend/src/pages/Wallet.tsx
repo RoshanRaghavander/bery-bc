@@ -3,7 +3,8 @@ import { ethers } from 'ethers';
 import { useWallet, RPC_URL } from '../hooks/useWallet';
 
 export function Wallet() {
-  const { address: connectedAddr, provider, type, connectMetaMask, connectWalletConnect, disconnect, ensureChain } = useWallet();
+  const { address: connectedAddr, provider, type, connectMetaMask, connectWalletConnect, disconnect, ensureChain } =
+    useWallet();
   const [address, setAddress] = useState('');
   const [balance, setBalance] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -105,105 +106,163 @@ export function Wallet() {
     }
   };
 
+  const inputStyle = {
+    width: '100%',
+    padding: '12px 14px',
+    marginBottom: 12,
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-md)',
+    background: 'var(--color-bg-muted)',
+    color: 'var(--color-text)',
+    fontSize: 14,
+  };
+
+  const cardStyle = {
+    padding: 24,
+    background: 'var(--color-surface)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-lg)',
+    marginBottom: 24,
+  };
+
+  const btnPrimary = {
+    padding: '10px 20px',
+    background: 'var(--color-accent)',
+    color: 'white',
+    fontWeight: 600,
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 14,
+  };
+
+  const btnSecondary = {
+    padding: '10px 20px',
+    background: 'var(--color-bg-muted)',
+    color: 'var(--color-text)',
+    fontWeight: 500,
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 14,
+  };
+
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: '40px 24px' }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Wallet</h1>
-      <p style={{ color: 'var(--color-text-muted)', marginBottom: 40 }}>
+    <div style={{ maxWidth: 640, margin: '0 auto', padding: '32px 24px' }}>
+      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Wallet</h1>
+      <p style={{ color: 'var(--color-text-muted)', marginBottom: 32, fontSize: 14 }}>
         Create a wallet, get BRY from faucet, and send
       </p>
 
-      {/* Connect Wallet (MetaMask / WalletConnect) */}
-      <div style={{ padding: 24, background: 'var(--color-bg-alt)', border: '1px solid var(--color-border)', borderRadius: 12, marginBottom: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>1. Connect Wallet</h2>
-        <p style={{ fontSize: 14, color: 'var(--color-text-muted)', marginBottom: 16 }}>
+      <div style={cardStyle}>
+        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Connect Wallet</h2>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 16 }}>
           Use MetaMask or WalletConnect for production.
         </p>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <button onClick={connectMetaMask} style={{ padding: '10px 20px', background: '#f6851b', color: 'white', fontWeight: 600, border: 'none', borderRadius: 8 }}>
+          <button onClick={connectMetaMask} style={{ ...btnPrimary, background: '#f6851b' }}>
             MetaMask
           </button>
-          <button onClick={connectWalletConnect} style={{ padding: '10px 20px', background: '#3396ff', color: 'white', fontWeight: 600, border: 'none', borderRadius: 8 }}>
+          <button onClick={connectWalletConnect} style={{ ...btnPrimary, background: '#3396ff' }}>
             WalletConnect
           </button>
-          {type && <button onClick={disconnect} style={{ padding: '10px 20px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 8 }}>Disconnect</button>}
+          {type && (
+            <button onClick={disconnect} style={btnSecondary}>
+              Disconnect
+            </button>
+          )}
         </div>
-        {connectedAddr && <p style={{ marginTop: 12, fontSize: 13, fontFamily: 'var(--font-mono)' }}>{connectedAddr}</p>}
+        {connectedAddr && (
+          <p style={{ marginTop: 16, fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>
+            {connectedAddr}
+          </p>
+        )}
       </div>
 
-      {/* Create Wallet (dev) */}
-      <div style={{ padding: 24, background: 'var(--color-bg-alt)', border: '1px solid var(--color-border)', borderRadius: 12, marginBottom: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Or Create New (client-side)</h2>
-        <p style={{ fontSize: 14, color: 'var(--color-text-muted)', marginBottom: 16 }}>
+      <div style={cardStyle}>
+        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Create New Wallet</h2>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 16 }}>
           Generate a new address. Private key stays in your browser.
         </p>
-        <button onClick={createWallet} style={{ padding: '10px 20px', background: 'var(--color-accent)', color: 'white', fontWeight: 600, border: 'none', borderRadius: 8 }}>
+        <button onClick={createWallet} style={btnPrimary}>
           Create Wallet
         </button>
         {wallet && (
-          <div style={{ marginTop: 16 }}>
-            <div style={{ marginBottom: 8 }}>
-              <span style={{ fontSize: 12, color: 'var(--color-text-subtle)' }}>Address</span>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, wordBreak: 'break-all' }}>{wallet.address}</div>
+          <div style={{ marginTop: 20 }}>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>
+                Address
+              </label>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, wordBreak: 'break-all', color: 'var(--color-accent)' }}>
+                {wallet.address}
+              </div>
             </div>
             <div>
-              <span style={{ fontSize: 12, color: 'var(--color-text-subtle)' }}>Private Key</span>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, wordBreak: 'break-all' }}>
+              <label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>
+                Private Key
+              </label>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, wordBreak: 'break-all', marginBottom: 8 }}>
                 {showKey ? wallet.privateKey : '••••••••'}
               </div>
-              <button onClick={() => setShowKey(!showKey)} style={{ marginTop: 4, fontSize: 12, padding: '4px 8px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 6 }}>
-                {showKey ? 'Hide' : 'Show'} (save it—you can’t recover it)
+              <button onClick={() => setShowKey(!showKey)} style={{ ...btnSecondary, padding: '6px 12px', fontSize: 12 }}>
+                {showKey ? 'Hide' : 'Show'} (save it—you can&apos;t recover it)
               </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Balance & Faucet */}
-      <div style={{ padding: 24, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12, marginBottom: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>2. Balance & Faucet</h2>
+      <div style={cardStyle}>
+        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Balance & Faucet</h2>
         <input
           value={address || connectedAddr || ''}
           onChange={(e) => setAddress(e.target.value)}
           placeholder="Address or use connected/created wallet"
-          style={{ width: '100%', padding: 10, marginBottom: 8, border: '1px solid var(--color-border)', borderRadius: 8 }}
+          style={inputStyle}
         />
         <input
           value={faucetToken}
           onChange={(e) => setFaucetToken(e.target.value)}
           placeholder="Faucet token (if required)"
-          style={{ width: '100%', padding: 10, marginBottom: 8, border: '1px solid var(--color-border)', borderRadius: 8 }}
+          style={inputStyle}
         />
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={() => checkBalance()} disabled={loading} style={{ padding: '10px 20px', background: 'var(--color-accent)', color: 'white', fontWeight: 600, border: 'none', borderRadius: 8 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <button onClick={() => checkBalance()} disabled={loading} style={btnPrimary}>
             {loading ? 'Loading...' : 'Check Balance'}
           </button>
-          <button onClick={requestFaucet} style={{ padding: '10px 20px', background: 'var(--color-success)', color: 'white', fontWeight: 600, border: 'none', borderRadius: 8 }}>
+          <button
+            onClick={requestFaucet}
+            style={{ ...btnPrimary, background: 'var(--color-success)' }}
+          >
             Request 1 BRY
           </button>
         </div>
-        {balance !== null && <p style={{ marginTop: 12, fontWeight: 600 }}>Balance: {balance}</p>}
-        {faucetStatus && <p style={{ marginTop: 8, fontSize: 13, color: 'var(--color-text-subtle)' }}>{faucetStatus}</p>}
+        {balance !== null && (
+          <p style={{ marginTop: 16, fontWeight: 600, fontSize: 15 }}>Balance: {balance}</p>
+        )}
+        {faucetStatus && (
+          <p style={{ marginTop: 12, fontSize: 13, color: 'var(--color-text-muted)' }}>{faucetStatus}</p>
+        )}
       </div>
 
-      {/* Send */}
-      <div style={{ padding: 24, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>3. Send BRY</h2>
+      <div style={cardStyle}>
+        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Send BRY</h2>
         <input
           value={sendTo}
           onChange={(e) => setSendTo(e.target.value)}
           placeholder="Recipient address"
-          style={{ width: '100%', padding: 10, marginBottom: 8, border: '1px solid var(--color-border)', borderRadius: 8 }}
+          style={inputStyle}
         />
         <input
           value={sendAmount}
           onChange={(e) => setSendAmount(e.target.value)}
           placeholder="Amount (e.g. 0.1)"
-          style={{ width: '100%', padding: 10, marginBottom: 8, border: '1px solid var(--color-border)', borderRadius: 8 }}
+          style={inputStyle}
         />
-        <button onClick={sendTx} style={{ padding: '10px 20px', background: 'var(--color-accent)', color: 'white', fontWeight: 600, border: 'none', borderRadius: 8 }}>
+        <button onClick={sendTx} style={btnPrimary}>
           Send
         </button>
-        {sendStatus && <p style={{ marginTop: 8, fontSize: 13, color: 'var(--color-text-subtle)' }}>{sendStatus}</p>}
+        {sendStatus && (
+          <p style={{ marginTop: 12, fontSize: 13, color: 'var(--color-text-muted)' }}>{sendStatus}</p>
+        )}
       </div>
     </div>
   );

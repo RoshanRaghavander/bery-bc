@@ -3,34 +3,50 @@ import { Link } from 'react-router-dom';
 export function Landing() {
   return (
     <div>
-      {/* Hero */}
       <section
         style={{
-          padding: '80px 24px 100px',
+          padding: '100px 24px 120px',
           textAlign: 'center',
-          background: 'linear-gradient(180deg, var(--color-bg-alt) 0%, var(--color-bg) 100%)',
+          background: 'linear-gradient(180deg, var(--color-bg-alt) 0%, var(--color-bg) 50%)',
+          position: 'relative',
+          overflow: 'hidden',
         }}
       >
-        <div style={{ maxWidth: 720, margin: '0 auto' }}>
-          <p
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 600,
+            height: 600,
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%)',
+            pointerEvents: 'none',
+          }}
+        />
+        <div style={{ maxWidth: 720, margin: '0 auto', position: 'relative', zIndex: 1 }}>
+          <span
             style={{
-              fontSize: 14,
+              display: 'inline-block',
+              fontSize: 12,
               fontWeight: 600,
               color: 'var(--color-accent)',
               textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              marginBottom: 16,
+              letterSpacing: '0.15em',
+              marginBottom: 20,
             }}
           >
             AI-Native Blockchain
-          </p>
+          </span>
           <h1
             style={{
               fontSize: 'clamp(2.5rem, 5vw, 3.5rem)',
               fontWeight: 700,
-              lineHeight: 1.15,
+              lineHeight: 1.1,
               color: 'var(--color-text)',
               margin: '0 0 24px',
+              letterSpacing: '-0.02em',
             }}
           >
             The blockchain for AI agents{' '}
@@ -44,8 +60,8 @@ export function Landing() {
               margin: '0 0 40px',
             }}
           >
-            Bery enables seamless value transfer and smart contracts for autonomous AI agents and humans. 
-            Fast, scalable, and built for the future of decentralized AI.
+            Bery enables seamless value transfer and smart contracts for autonomous AI agents and
+            humans. Fast, EVM-compatible, built for the future.
           </p>
           <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link
@@ -56,7 +72,7 @@ export function Landing() {
                 color: 'white',
                 fontWeight: 600,
                 borderRadius: 'var(--radius-md)',
-                fontSize: 16,
+                fontSize: 15,
               }}
             >
               Get Started
@@ -65,11 +81,12 @@ export function Landing() {
               to="/explorer"
               style={{
                 padding: '14px 28px',
-                border: '2px solid var(--color-border-strong)',
+                border: '1px solid var(--color-border-strong)',
                 color: 'var(--color-text)',
                 fontWeight: 600,
                 borderRadius: 'var(--radius-md)',
-                fontSize: 16,
+                fontSize: 15,
+                background: 'var(--color-surface)',
               }}
             >
               Explorer
@@ -78,16 +95,15 @@ export function Landing() {
         </div>
       </section>
 
-      {/* Features */}
-      <section style={{ padding: '60px 24px', maxWidth: 1100, margin: '0 auto' }}>
-        <h2 style={{ fontSize: 28, fontWeight: 700, textAlign: 'center', marginBottom: 48 }}>
+      <section style={{ padding: '80px 24px', maxWidth: 1100, margin: '0 auto' }}>
+        <h2 style={{ fontSize: 24, fontWeight: 700, textAlign: 'center', marginBottom: 48 }}>
           Why Bery
         </h2>
         <div
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-            gap: 32,
+            gap: 24,
           }}
         >
           {[
@@ -114,29 +130,36 @@ export function Landing() {
                 background: 'var(--color-surface)',
                 border: '1px solid var(--color-border)',
                 borderRadius: 'var(--radius-lg)',
-                boxShadow: 'var(--shadow-sm)',
               }}
             >
-              <div style={{ fontSize: 32, marginBottom: 16 }}>{icon}</div>
-              <h3 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>{title}</h3>
-              <p style={{ color: 'var(--color-text-muted)', margin: 0, fontSize: 15 }}>{desc}</p>
+              <div style={{ fontSize: 28, marginBottom: 16 }}>{icon}</div>
+              <h3 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 8px' }}>{title}</h3>
+              <p style={{ color: 'var(--color-text-muted)', margin: 0, fontSize: 14, lineHeight: 1.6 }}>
+                {desc}
+              </p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* CTA */}
       <section
         style={{
           padding: '80px 24px',
           background: 'var(--color-bg-alt)',
           textAlign: 'center',
+          borderTop: '1px solid var(--color-border)',
         }}
       >
-        <h2 style={{ fontSize: 28, fontWeight: 700, marginBottom: 16 }}>
-          Start building on Bery
-        </h2>
-        <p style={{ color: 'var(--color-text-muted)', marginBottom: 24, maxWidth: 500, margin: '0 auto 24px' }}>
+        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 16 }}>Start building on Bery</h2>
+        <p
+          style={{
+            color: 'var(--color-text-muted)',
+            marginBottom: 28,
+            maxWidth: 460,
+            margin: '0 auto 28px',
+            fontSize: 15,
+          }}
+        >
           Create a wallet, explore the chain, and integrate with your AI agents.
         </p>
         <Link

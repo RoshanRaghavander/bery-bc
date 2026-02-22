@@ -33,6 +33,16 @@ export function SignUp() {
     }
   };
 
+  const inputStyle = {
+    width: '100%',
+    padding: '12px 14px',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-md)',
+    fontSize: 14,
+    background: 'var(--color-bg-muted)',
+    color: 'var(--color-text)',
+  };
+
   return (
     <div
       style={{
@@ -51,16 +61,15 @@ export function SignUp() {
           background: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
           borderRadius: 'var(--radius-lg)',
-          boxShadow: 'var(--shadow-md)',
         }}
       >
         <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Create Account</h1>
-        <p style={{ color: 'var(--color-text-muted)', marginBottom: 32, fontSize: 15 }}>
+        <p style={{ color: 'var(--color-text-muted)', marginBottom: 32, fontSize: 14 }}>
           Join Bery and start using the AI-native blockchain
         </p>
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--color-text-muted)' }}>
               Email
             </label>
             <input
@@ -69,17 +78,11 @@ export function SignUp() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               required
-              style={{
-                width: '100%',
-                padding: '12px 14px',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-md)',
-                fontSize: 15,
-              }}
+              style={inputStyle}
             />
           </div>
           <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--color-text-muted)' }}>
               Password
             </label>
             <input
@@ -89,17 +92,11 @@ export function SignUp() {
               placeholder="••••••••"
               required
               minLength={8}
-              style={{
-                width: '100%',
-                padding: '12px 14px',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-md)',
-                fontSize: 15,
-              }}
+              style={inputStyle}
             />
           </div>
           <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--color-text-muted)' }}>
               Confirm Password
             </label>
             <input
@@ -108,16 +105,12 @@ export function SignUp() {
               onChange={(e) => setConfirm(e.target.value)}
               placeholder="••••••••"
               required
-              style={{
-                width: '100%',
-                padding: '12px 14px',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-md)',
-                fontSize: 15,
-              }}
+              style={inputStyle}
             />
           </div>
-          {error && <p style={{ color: 'var(--color-error)', marginBottom: 16, fontSize: 14 }}>{error}</p>}
+          {error && (
+            <p style={{ color: 'var(--color-error)', marginBottom: 16, fontSize: 13 }}>{error}</p>
+          )}
           <button
             type="submit"
             disabled={loading}
@@ -129,13 +122,13 @@ export function SignUp() {
               fontWeight: 600,
               border: 'none',
               borderRadius: 'var(--radius-md)',
-              fontSize: 16,
+              fontSize: 14,
             }}
           >
             {loading ? 'Creating...' : 'Create Account'}
           </button>
         </form>
-        <p style={{ textAlign: 'center', marginTop: 24, fontSize: 14, color: 'var(--color-text-subtle)' }}>
+        <p style={{ textAlign: 'center', marginTop: 24, fontSize: 13, color: 'var(--color-text-subtle)' }}>
           Already have an account?{' '}
           <Link to="/sign-in" style={{ fontWeight: 600 }}>
             Sign in

@@ -2,13 +2,13 @@ import { Link } from 'react-router-dom';
 
 export function About() {
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: '40px 24px' }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>About Bery</h1>
-      <p style={{ color: 'var(--color-text-muted)', marginBottom: 40 }}>
+    <div style={{ maxWidth: 720, margin: '0 auto', padding: '32px 24px' }}>
+      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>About Bery</h1>
+      <p style={{ color: 'var(--color-text-muted)', marginBottom: 40, fontSize: 14 }}>
         The blockchain for AI agents and people
       </p>
 
-      <div style={{ lineHeight: 1.8, color: 'var(--color-text-muted)' }}>
+      <div style={{ lineHeight: 1.8, color: 'var(--color-text-muted)', fontSize: 14 }}>
         <p>
           Bery is an AI-native blockchain designed for seamless value transfer and smart contracts
           between autonomous AI agents and humans. It combines BFT consensus for instant finality
@@ -32,6 +32,7 @@ export function About() {
             color: 'white',
             fontWeight: 600,
             borderRadius: 'var(--radius-md)',
+            fontSize: 14,
           }}
         >
           Get Started

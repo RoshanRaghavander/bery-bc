@@ -1,31 +1,33 @@
 :root {
-  --color-bg: #ffffff;
-  --color-bg-alt: #f8fafc;
-  --color-bg-muted: #f1f5f9;
-  --color-border: #e2e8f0;
-  --color-border-strong: #cbd5e1;
-  --color-text: #0f172a;
-  --color-text-muted: #475569;
-  --color-text-subtle: #64748b;
-  --color-accent: #2563eb;
-  --color-accent-hover: #1d4ed8;
-  --color-accent-muted: #3b82f6;
-  --color-success: #059669;
-  --color-success-muted: #10b981;
-  --color-error: #dc2626;
-  --color-error-muted: #ef4444;
-  --color-surface: #ffffff;
-  --color-surface-elevated: #ffffff;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+  --color-bg: #0f0f12;
+  --color-bg-alt: #16161a;
+  --color-bg-muted: #1e1e24;
+  --color-surface: #1a1a1f;
+  --color-surface-elevated: #222228;
+  --color-border: #2d2d35;
+  --color-border-strong: #3d3d48;
+  --color-text: #f5f5f7;
+  --color-text-muted: #a1a1aa;
+  --color-text-subtle: #71717a;
+  --color-accent: #8b5cf6;
+  --color-accent-hover: #a78bfa;
+  --color-accent-muted: #7c3aed;
+  --color-success: #22c55e;
+  --color-success-muted: #4ade80;
+  --color-error: #ef4444;
+  --color-error-muted: #f87171;
+  --color-warning: #f59e0b;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.5);
   --radius-sm: 6px;
   --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
-  --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-  --transition: 0.2s ease;
+  --transition: 0.15s ease;
+  --navbar-height: 56px;
 }
 
 * {
@@ -39,8 +41,8 @@ html {
 body {
   margin: 0;
   font-family: var(--font-sans);
-  font-size: 16px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--color-text);
   background: var(--color-bg);
   -webkit-font-smoothing: antialiased;
@@ -60,8 +62,74 @@ a:hover {
 button {
   font-family: inherit;
   cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 input, textarea, select {
   font-family: inherit;
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--color-text-subtle);
+}
+
+/* Form controls */
+input, textarea {
+  background: var(--color-bg-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--color-text);
+  outline: none;
+}
+
+input:focus, textarea:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+/* Cards */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.card-elevated {
+  background: var(--color-surface-elevated);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Badge */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 9999px;
+}
+
+.badge-success { background: rgba(34, 197, 94, 0.2); color: var(--color-success); }
+.badge-error { background: rgba(239, 68, 68, 0.2); color: var(--color-error); }
+.badge-muted { background: var(--color-bg-muted); color: var(--color-text-muted); }
+
+/* Copyable text */
+.copyable {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.copyable:hover {
+  text-decoration: underline;
 }
