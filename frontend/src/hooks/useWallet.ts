@@ -12,7 +12,7 @@ export function useWallet() {
   const [address, setAddress] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [type, setType] = useState<'metamask' | 'walletconnect' | null>(null);
-  const [wcProvider, setWcProvider] = useState<EthereumProvider | null>(null);
+  const [wcProvider, setWcProvider] = useState<Awaited<ReturnType<typeof EthereumProvider.init>> | null>(null);
 
   const connectMetaMask = useCallback(async () => {
     if (!(window as any).ethereum) throw new Error('MetaMask not installed');

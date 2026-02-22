@@ -4,8 +4,8 @@
   "description": "",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
-    "prestart": "npm run build",
+    "build": "tsc && npm run build:frontend",
+    "build:frontend": "cd frontend && npm install && npm run build",
     "start": "node dist/index.js",
     "start:dev": "ts-node --esm src/index.ts",
     "test": "npm run build && node --test tests/*.spec.js",
